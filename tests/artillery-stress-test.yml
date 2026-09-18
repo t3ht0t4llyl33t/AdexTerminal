@@ -1,0 +1,65 @@
+config:
+  target: "http://localhost:3000"
+  phases:
+    - name: "Warmup"
+      duration: 10
+      arrivalRate: 50
+    - name: "Ramp to 500"
+      duration: 20
+      arrivalRate: 50
+      rampTo: 500
+    - name: "Peak Load - 1000 concurrent"
+      duration: 30
+      arrivalRate: 500
+      rampTo: 1000
+    - name: "Sustained Highload"
+      duration: 30
+      arrivalRate: 1000
+    - name: "Cooldown"
+      duration: 10
+      arrivalRate: 1000
+      rampTo: 0
+  defaults:
+    headers:
+      X-Telegram-User-ID: "artillery-test-user"
+  ensure:
+    thresholds:
+      - http.response_time.p95: 50
+      - http.response_time.p99: 100
+      - http.response_time.p50: 30
+      - http.codes.429: 0
+
+scenarios:
+  - name: "Multi-chain radar scan"
+    weight: 40
+    flow:
+      - get:
+          url: "/api/radar"
+          expect:
+            - statusCode:
+                - 200
+                - 429
+            - hasHeader: "Content-Type"
+      - think: 0.1
+
+  - name: "Whale tracker polling"
+    weight: 30
+    flow:
+      - get:
+          url: "/api/whales"
+          expect:
+            - statusCode:
+                - 200
+                - 429
+      - think: 0.15
+
+  - name: "Security vault scan"
+    weight: 30
+    flow:
+      - get:
+          url: "/api/scanner"
+          expect:
+            - statusCode:
+                - 200
+                - 429
+      - think: 0.2
