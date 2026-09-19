@@ -3,8 +3,22 @@
 type HapticStyle = 'light' | 'medium' | 'heavy' | 'rigid' | 'soft';
 type NotificationType = 'error' | 'success' | 'warning';
 
+interface TelegramWebAppUser {
+  id?: number;
+  username?: string;
+  first_name?: string;
+  language_code?: string;
+  is_premium?: boolean;
+}
+
+interface TelegramWebAppInitDataUnsafe {
+  user?: TelegramWebAppUser;
+  start_param?: string;
+}
+
 interface TelegramWebApp {
   initData?: string;
+  initDataUnsafe?: TelegramWebAppInitDataUnsafe;
   ready?: () => void;
   expand?: () => void;
   themeParams?: {
@@ -63,4 +77,22 @@ export function hapticNotify(type: NotificationType): void {
 export function isInsideTelegram(): boolean {
   const wa = getWebApp();
   return !!(wa?.initData && wa.initData.length > 0);
+}
+
+export function getInitData(): string {
+  const wa = getWebApp();
+  return wa?.initData ?? '';
+}
+
+export function getTelegramUserIdUnsafe(): string {
+  const wa = getWebApp();
+  const id = wa?.initDataUnsafe?.user?.id;
+  if (typeof id === 'number' && Number.isFinite(id)) return String(id);
+  return '';
+}
+
+export function getStartParamUnsafe(): string {
+  const wa = getWebApp();
+  const sp = wa?.initDataUnsafe?.start_param;
+  return typeof sp === 'string' ? sp : '';
 }

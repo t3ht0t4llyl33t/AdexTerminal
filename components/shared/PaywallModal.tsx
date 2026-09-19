@@ -5,6 +5,8 @@ import { X, Lock, Rocket, ExternalLink, Loader2, Wallet, Bot, RefreshCw, Search,
 import type { Language } from '@/lib/types';
 import { translate } from '@/lib/i18n';
 import { useTonConnectUI } from '@tonconnect/ui-react';
+import { trackEvent } from '@/lib/product-events';
+import { authFetch } from '@/lib/api-client';
 
 interface PaywallModalProps {
   open: boolean;
@@ -30,29 +32,6 @@ function formatTon(price: number): string {
 
 function formatUsdTarget(target: number): string {
   return target % 1 === 0 ? `${target.toFixed(0)}` : `${target.toFixed(1)}`;
-}
-
-function getTelegramUserId(): string {
-  if (typeof window === 'undefined') return 'anonymous';
-  try {
-    const tg = (window as unknown as { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number } } } } }).Telegram;
-    if (tg?.WebApp?.initDataUnsafe?.user?.id) {
-      return String(tg.WebApp.initDataUnsafe.user.id);
-    }
-    const params = new URLSearchParams(window.location.search);
-    const tgWebAppData = params.get('tgWebAppData');
-    if (tgWebAppData) {
-      const parsed = new URLSearchParams(tgWebAppData);
-      const userJson = parsed.get('user');
-      if (userJson) {
-        const user = JSON.parse(userJson);
-        if (user?.id) return String(user.id);
-      }
-    }
-    return 'anonymous';
-  } catch {
-    return 'anonymous';
-  }
 }
 
 export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalProps) {
@@ -99,6 +78,7 @@ export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalPro
   const handleTonConnectPayment = async () => {
     setError(null);
     setSuccess(null);
+    trackEvent('pro_upgrade_started', { method: 'ton_connect' });
 
     if (!tonConnectUI?.wallet) {
       tonConnectUI?.openModal();
@@ -129,13 +109,9 @@ export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalPro
 
       await tonConnectUI.sendTransaction(tx);
 
-      const tgUserId = getTelegramUserId();
-
-      await fetch('/api/billing/ton-connect', {
+      await authFetch('/api/billing/ton-connect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          telegram_user_id: tgUserId,
           sender_address: tonConnectUI.wallet.account.address,
           tx_hash: 'pending_manual_verify',
           amount_ton: parseFloat(tonAmount),
@@ -146,6 +122,7 @@ export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalPro
       setSuccess(lang === 'RU'
         ? 'Транзакция отправлена! Premium активируется после подтверждения в блокчейне (1-2 минуты).'
         : 'Transaction sent! Premium activates after blockchain confirmation (1-2 min).');
+      trackEvent('pro_upgrade_completed', { method: 'ton_connect' });
     } catch {
       setError(lang === 'RU' ? 'Ошибка оплаты через TON Connect' : 'TON Connect payment failed');
     } finally {
@@ -157,13 +134,12 @@ export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalPro
     setError(null);
     setSuccess(null);
     setLoading('crypto_pay');
+    trackEvent('pro_upgrade_started', { method: 'crypto_pay' });
 
     try {
-      const tgUserId = getTelegramUserId();
-      const res = await fetch('/api/billing/checkout', {
+      const res = await authFetch('/api/billing/checkout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ telegram_user_id: tgUserId, lang }),
+        body: JSON.stringify({ lang }),
       });
 
       if (!res.ok) throw new Error('checkout failed');
@@ -188,6 +164,7 @@ export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalPro
     setError(null);
     setSuccess(null);
     setLoading('changelly');
+    trackEvent('pro_upgrade_started', { method: 'changelly' });
 
     try {
       const walletAddress = tonConnectUI?.wallet?.account.address;
@@ -197,9 +174,8 @@ export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalPro
         return;
       }
 
-      const res = await fetch('/api/billing/changelly', {
+      const res = await authFetch('/api/billing/changelly', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ destination_address: walletAddress }),
       });
 

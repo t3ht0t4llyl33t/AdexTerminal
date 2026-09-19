@@ -1,19 +1,17 @@
+import { NextRequest } from 'next/server';
 import { getSupabase } from '@/lib/supabase-server';
+import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { action, telegram_user_id, wallet_address, amount_usd } = body as {
+    const authUser = await requireTelegramUser(req);
+    if (!authUser) return unauthorized();
+    const telegram_user_id = authUser.telegramUserId;
+    const body = await req.json().catch(() => ({}));
+    const { action, wallet_address } = body as {
       action: 'claim' | 'disconnect' | 'get_pending';
-      telegram_user_id?: string;
       wallet_address?: string;
-      amount_usd?: number;
     };
-
-    if (!telegram_user_id) {
-      return Response.json({ error: 'missing telegram_user_id' }, { status: 400 });
-    }
-
     const supabase = getSupabase();
 
     if (action === 'get_pending') {

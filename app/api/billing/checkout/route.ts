@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -31,24 +32,15 @@ interface CryptoPayInvoiceResponse {
 export async function POST(req: NextRequest) {
   try {
     if (!CRYPTO_PAY_API_TOKEN) {
-      return NextResponse.json(
-        { error: 'Crypto Pay is not configured' },
-        { status: 503 },
-      );
+      return NextResponse.json({ error: 'Crypto Pay is not configured' }, { status: 503 });
     }
 
-    const body = await req.json();
-    const { telegram_user_id, lang } = body as {
-      telegram_user_id?: string;
-      lang?: string;
-    };
+    const authUser = await requireTelegramUser(req);
+    if (!authUser) return unauthorized();
+    const telegram_user_id = authUser.telegramUserId;
 
-    if (!telegram_user_id) {
-      return NextResponse.json(
-        { error: 'missing telegram_user_id' },
-        { status: 400 },
-      );
-    }
+    const body = await req.json().catch(() => ({}));
+    const { lang } = body as { lang?: string };
 
     const description =
       lang === 'RU'
@@ -76,19 +68,13 @@ export async function POST(req: NextRequest) {
     });
 
     if (!res.ok) {
-      return NextResponse.json(
-        { error: 'Failed to create invoice' },
-        { status: 502 },
-      );
+      return NextResponse.json({ error: 'Failed to create invoice' }, { status: 502 });
     }
 
     const data = (await res.json()) as CryptoPayInvoiceResponse;
 
     if (!data.ok || !data.result?.pay_url) {
-      return NextResponse.json(
-        { error: data.error || 'Invoice creation failed' },
-        { status: 502 },
-      );
+      return NextResponse.json({ error: data.error || 'Invoice creation failed' }, { status: 502 });
     }
 
     const supabase = getSupabaseAdmin();
@@ -101,7 +87,7 @@ export async function POST(req: NextRequest) {
           updated_at: new Date().toISOString(),
         }, { onConflict: 'telegram_user_id' });
       } catch {
-        // best-effort — invoice still valid
+        // best-effort
       }
     }
 
@@ -112,9 +98,6 @@ export async function POST(req: NextRequest) {
       amount_usd: PREMIUM_PRICE_USD,
     });
   } catch {
-    return NextResponse.json(
-      { error: 'Checkout failed' },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: 'Checkout failed' }, { status: 500 });
   }
 }

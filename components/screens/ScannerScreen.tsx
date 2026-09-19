@@ -22,6 +22,7 @@ import {
   X,
   History,
 } from 'lucide-react';
+import { authFetch } from '@/lib/api-client';
 import type { SecurityScan, Language, NetworkSelection } from '@/lib/types';
 import { translate, interpolate, type TranslationKey } from '@/lib/i18n';
 import { NetworkBadge } from '@/components/shared/NetworkBadge';
@@ -31,6 +32,7 @@ import { NetworkSwitcher } from '@/components/shared/NetworkSwitcher';
 import { formatAddress } from '@/components/shared/Format';
 import { cn } from '@/lib/utils';
 import { buildTradeLink, DEFAULT_TRADE_SETTINGS, type TradeSettings } from '@/lib/trade-links';
+import { trackEvent } from '@/lib/product-events';
 
 interface ScannerScreenProps {
   scans: SecurityScan[];
@@ -53,28 +55,6 @@ interface AuditResponse {
 
 const DAILY_FREE_LIMIT = 10;
 
-function getTelegramUserId(): string {
-  if (typeof window === 'undefined') return 'anonymous';
-  try {
-    const tg = (window as unknown as { Telegram?: { WebApp?: { initData?: string; initDataUnsafe?: { user?: { id?: number } } } } }).Telegram;
-    if (tg?.WebApp?.initDataUnsafe?.user?.id) {
-      return String(tg.WebApp.initDataUnsafe.user.id);
-    }
-    const params = new URLSearchParams(window.location.search);
-    const tgWebAppData = params.get('tgWebAppData');
-    if (tgWebAppData) {
-      const parsed = new URLSearchParams(tgWebAppData);
-      const userJson = parsed.get('user');
-      if (userJson) {
-        const user = JSON.parse(userJson);
-        if (user?.id) return String(user.id);
-      }
-    }
-    return 'anonymous';
-  } catch {
-    return 'anonymous';
-  }
-}
 
 export function ScannerScreen({ scans, lang, networks, onNetworksChange }: ScannerScreenProps) {
   const [searchInput, setSearchInput] = useState('');
@@ -88,8 +68,7 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
   const [tradeSettings, setTradeSettings] = useState<TradeSettings>(DEFAULT_TRADE_SETTINGS);
 
   const refreshHistory = () => {
-    const tgUserId = getTelegramUserId();
-    fetch(`/api/scanner?tgUserId=${encodeURIComponent(tgUserId)}`)
+    authFetch('/api/scanner')
       .then((res) => res.json())
       .then((json) => {
         if (json.data && Array.isArray(json.data)) {
@@ -100,11 +79,9 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
   };
 
   useEffect(() => {
-    const tgUserId = getTelegramUserId();
-    fetch('/api/trade-settings', {
+    authFetch('/api/trade-settings', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ telegram_user_id: tgUserId, action: 'get' }),
+      body: JSON.stringify({ action: 'get' }),
     })
       .then((res) => res.json())
       .then((json) => {
@@ -124,16 +101,13 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
     setScanning(true);
     setError(null);
     setBonusMessage(null);
+    trackEvent('scan_started', { addr_len: searchInput.trim().length });
 
     try {
-      const tgUserId = getTelegramUserId();
-
-      const res = await fetch('/api/scanner', {
+      const res = await authFetch('/api/scanner', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           address: searchInput.trim(),
-          tgUserId,
         }),
       });
 
@@ -152,6 +126,7 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
 
       if (json.scan) {
         setAudit(json as AuditResponse);
+        trackEvent('scan_completed', { risk: json.scan?.riskLevel, network: json.scan?.network });
         refreshHistory();
       } else if (json.error) {
         setError(json.error);
@@ -165,14 +140,10 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
 
   const handleBonusScans = async () => {
     try {
-      const tgUserId = getTelegramUserId();
-
-      const res = await fetch('/api/scanner', {
+      const res = await authFetch('/api/scanner', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           address: searchInput.trim() || '0x0000000000000000000000000000000000000000',
-          tgUserId,
           referralToken: 'bonus-link',
           referrerTgId: 'adex-system',
         }),

@@ -16,10 +16,36 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'aDEX Terminal — Crypto Quant Terminal',
+  metadataBase: new URL('https://adexterminal.com'),
+  title: 'aDEX Terminal — Real-time DEX radar for TON, BSC and Base',
   description:
-    'aDEX Terminal — Institutional-grade crypto quant terminal for real-time DEX volume spike radar, whale tracking, and security vault analysis across TON, BSC, and Base networks.',
+    'aDEX Terminal — A Telegram-native quant terminal for spotting volume spikes, tracking whale wallets and scanning contract safety across TON, BSC and Base.',
   themeColor: '#0B0B0F',
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/logo.png', type: 'image/png' },
+    ],
+    apple: '/logo.png',
+  },
+  openGraph: {
+    title: 'aDEX Terminal — Real-time DEX radar for TON, BSC and Base',
+    description:
+      'A Telegram-native quant terminal for spotting volume spikes, tracking whale wallets and scanning contract safety across TON, BSC and Base.',
+    url: 'https://adexterminal.com',
+    siteName: 'aDEX Terminal',
+    images: [
+      { url: '/logo.png', width: 512, height: 512, alt: 'aDEX Terminal' },
+    ],
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'aDEX Terminal',
+    description:
+      'Telegram-native DEX radar for TON, BSC and Base — volume spikes, whale wallets and contract safety in one tap.',
+    images: ['/logo.png'],
+  },
   viewport: {
     width: 'device-width',
     initialScale: 1,

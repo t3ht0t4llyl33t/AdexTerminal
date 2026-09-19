@@ -1,4 +1,6 @@
+import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
 
 const SCOUT_KEY = 'ton_grant_scout';
 const ADMIN_KEY = 'adex_grant_admin';
@@ -12,43 +14,28 @@ function getSupabaseAdmin() {
   return createClient(url, key);
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { start_param, telegram_user_id } = body as {
-      start_param?: string;
-      telegram_user_id?: string;
-    };
+    const authUser = await requireTelegramUser(req);
+    if (!authUser) return unauthorized();
+    const telegram_user_id = authUser.telegramUserId;
 
-    if (!telegram_user_id) {
-      return Response.json(
-        { is_premium: false, is_scout: false },
-        { status: 200 },
-      );
-    }
+    const body = await req.json().catch(() => ({}));
+    const { start_param } = body as { start_param?: string };
 
     if (start_param !== SCOUT_KEY && start_param !== ADMIN_KEY) {
-      return Response.json(
-        { is_premium: false, is_scout: false },
-        { status: 200 },
-      );
+      return Response.json({ is_premium: false, is_scout: false }, { status: 200 });
     }
 
     const isAdminPass = start_param === ADMIN_KEY;
 
     if (!isAdminPass && new Date() > SCOUT_DEADLINE) {
-      return Response.json(
-        { is_premium: false, is_scout: false, reason: 'expired' },
-        { status: 200 },
-      );
+      return Response.json({ is_premium: false, is_scout: false, reason: 'expired' }, { status: 200 });
     }
 
     const supabase = getSupabaseAdmin();
     if (!supabase) {
-      return Response.json(
-        { is_premium: false, is_scout: false, reason: 'db_unavailable' },
-        { status: 200 },
-      );
+      return Response.json({ is_premium: false, is_scout: false, reason: 'db_unavailable' }, { status: 200 });
     }
 
     if (!isAdminPass) {
@@ -64,10 +51,7 @@ export async function POST(req: Request) {
           .maybeSingle();
 
         if (!existing) {
-          return Response.json(
-            { is_premium: false, is_scout: false, reason: 'cap_reached' },
-            { status: 200 },
-          );
+          return Response.json({ is_premium: false, is_scout: false, reason: 'cap_reached' }, { status: 200 });
         }
       }
     }
@@ -75,22 +59,12 @@ export async function POST(req: Request) {
     await supabase
       .from('scout_registrations')
       .upsert(
-        {
-          telegram_user_id,
-          is_scout: true,
-          is_premium: true,
-        },
+        { telegram_user_id, is_scout: true, is_premium: true },
         { onConflict: 'telegram_user_id' },
       );
 
-    return Response.json(
-      { is_premium: true, is_scout: true },
-      { status: 200 },
-    );
+    return Response.json({ is_premium: true, is_scout: true }, { status: 200 });
   } catch {
-    return Response.json(
-      { is_premium: false, is_scout: false },
-      { status: 200 },
-    );
+    return Response.json({ is_premium: false, is_scout: false }, { status: 200 });
   }
 }

@@ -8,6 +8,7 @@ import { CopyButton } from '@/components/shared/CopyButton';
 import { formatAddress } from '@/components/shared/Format';
 import { cn } from '@/lib/utils';
 import { buildTradeLink, type TradeSettings, DEFAULT_TRADE_SETTINGS } from '@/lib/trade-links';
+import { authFetch } from '@/lib/api-client';
 
 interface WhalePositionModalProps {
   whale: WhaleAlert | null;
@@ -60,7 +61,7 @@ export function WhalePositionModal({
         trade_type: whale.type,
         lang,
       });
-      const res = await fetch(`/api/whales/portfolio?${params}`);
+      const res = await authFetch(`/api/whales/portfolio?${params}`);
       if (!res.ok) throw new Error('fetch failed');
       const json = (await res.json()) as PortfolioData;
       setData(json);

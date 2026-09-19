@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,8 +20,11 @@ const VALID_EVM = ['banana', 'maestro'] as const;
 
 export async function POST(req: NextRequest) {
   try {
+    const authUser = await requireTelegramUser(req);
+    if (!authUser) return unauthorized();
+    const tgUserId = authUser.telegramUserId;
+
     const body = await req.json().catch(() => ({}));
-    const tgUserId = String(body.telegram_user_id || 'demo_user');
     const action = body.action || 'get';
 
     const supabase = getSupabaseAdmin();
@@ -50,7 +54,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // action === 'get'
     let tonService = 'dedust';
     let evmService = 'banana';
 

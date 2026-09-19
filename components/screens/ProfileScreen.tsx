@@ -21,6 +21,7 @@ import {
   Copy,
   Check,
   Infinity as InfinityIcon,
+  Mail,
 } from 'lucide-react';
 import type { AlertConfig, Language, NetworkFilter } from '@/lib/types';
 import { translate } from '@/lib/i18n';
@@ -35,6 +36,8 @@ import {
   type TonService,
   type EvmService,
 } from '@/lib/trade-links';
+import { authFetch } from '@/lib/api-client';
+import { getTelegramUserIdUnsafe } from '@/lib/telegram-webapp';
 
 interface ProfileScreenProps {
   lang: Language;
@@ -76,6 +79,7 @@ export function ProfileScreen({
   const [openTradeMenu, setOpenTradeMenu] = useState<'ton' | 'evm' | null>(null);
   const tonMenuRef = useRef<HTMLDivElement>(null);
   const evmMenuRef = useRef<HTMLDivElement>(null);
+  const [digestEnabled, setDigestEnabled] = useState(true);
 
   const thresholdUnit = newAlertType === 'spike'
     ? translate(lang, 'profile.thresholdUnitPct')
@@ -101,21 +105,13 @@ export function ProfileScreen({
   };
 
   useEffect(() => {
-    const tgUserId = (() => {
-      try {
-        const params = new URLSearchParams(window.location.search);
-        const tgData = params.get('tgWebAppData') || '';
-        const match = tgData.match(/user.*?"id":(\d+)/);
-        return match ? match[1] : 'demo_user';
-      } catch { return 'demo_user'; }
-    })();
+    const hasSession = getTelegramUserIdUnsafe() !== '';
 
-    fetch('/api/trade-settings', {
+    authFetch('/api/trade-settings', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ telegram_user_id: tgUserId, action: 'get' }),
+      body: JSON.stringify({ action: 'get' }),
     })
-      .then((res) => res.ok ? res.json() : null)
+      .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.ok && data.settings) {
           setTradeSettings({
@@ -126,23 +122,39 @@ export function ProfileScreen({
         setTradeSettingsLoaded(true);
       })
       .catch(() => setTradeSettingsLoaded(true));
+
+    if (hasSession) {
+      authFetch('/api/digest-prefs', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'get' }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.ok) setDigestEnabled(Boolean(data.enabled));
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  const toggleDigest = useCallback(() => {
+    const hasSession = getTelegramUserIdUnsafe() !== '';
+    setDigestEnabled((prev) => {
+      const next = !prev;
+      if (hasSession) {
+        authFetch('/api/digest-prefs', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'save', enabled: next }),
+        }).catch(() => {});
+      }
+      return next;
+    });
   }, []);
 
   const saveTradeSettings = useCallback((newSettings: TradeSettings) => {
     setTradeSettings(newSettings);
-    const tgUserId = (() => {
-      try {
-        const params = new URLSearchParams(window.location.search);
-        const tgData = params.get('tgWebAppData') || '';
-        const match = tgData.match(/user.*?"id":(\d+)/);
-        return match ? match[1] : 'demo_user';
-      } catch { return 'demo_user'; }
-    })();
-    fetch('/api/trade-settings', {
+    authFetch('/api/trade-settings', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        telegram_user_id: tgUserId,
         action: 'save',
         ton_service: newSettings.ton_service,
         evm_service: newSettings.evm_service,
@@ -758,6 +770,49 @@ export function ProfileScreen({
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Academy Section */}
+      <div className="relative overflow-hidden rounded-2xl border border-fuchsia-400/20 bg-gradient-to-br from-sky-500/[0.04] to-fuchsia-500/[0.04] p-4 sm:p-5">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl bg-sky-400/10 border border-sky-300/25 flex items-center justify-center flex-shrink-0">
+            <Mail className="w-4 h-4 text-sky-200" />
+          </div>
+          <div className="min-w-0 flex-grow">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                  {lang === 'RU' ? 'Утренний дайджест' : 'Morning digest'}
+                </h3>
+                <p className="mt-1 text-[10px] leading-relaxed text-white/60">
+                  {lang === 'RU'
+                    ? 'Одно короткое сообщение в Telegram: ваш список за сутки, свежие сигналы риска и ваш реферальный прогресс.'
+                    : 'One short Telegram message per day: your watchlist changes, fresh risk signals and your referral progress.'}
+                </p>
+                {digestEnabled && (
+                  <p className="mt-1 text-[10px] font-mono uppercase tracking-widest text-sky-200/60">
+                    {lang === 'RU' ? 'Следующая отправка ~12:00 UTC' : 'Next send ~12:00 UTC'}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={toggleDigest}
+                aria-pressed={digestEnabled}
+                className={cn(
+                  'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition-colors',
+                  digestEnabled ? 'border-sky-300/50 bg-sky-400/25' : 'border-white/15 bg-white/[0.04]',
+                )}
+              >
+                <span
+                  className={cn(
+                    'inline-block h-4 w-4 rounded-full bg-white shadow transition-transform',
+                    digestEnabled ? 'translate-x-6' : 'translate-x-1',
+                  )}
+                />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

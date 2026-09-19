@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/supabase-server';
+import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -39,8 +40,10 @@ async function getOrCreateCode(supabase: ReturnType<typeof getSupabase>, tgUserI
 
 export async function POST(req: NextRequest) {
   try {
+    const authUser = await requireTelegramUser(req);
+    if (!authUser) return unauthorized();
+    const tgUserId = authUser.telegramUserId;
     const body = await req.json().catch(() => ({}));
-    const tgUserId = body.telegram_user_id || body.tgUserId || 'demo_user';
     const lang = body.lang === 'RU' ? 'RU' : 'EN';
 
     const supabase = getSupabase();

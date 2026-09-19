@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import * as crypto from 'crypto';
+import { recordLightningBoostGrantIfEligible } from '@/lib/lightning-boost';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -148,6 +149,8 @@ export async function POST(req: NextRequest) {
       pro_expiration_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: 'telegram_user_id' });
+
+    await recordLightningBoostGrantIfEligible(supabase, tgUserId, PREMIUM_PRICE_USD);
 
     if (referrerTgId) {
       const transferResult = await cryptoPayTransfer(referrerTgId, commissionUsd.toFixed(2), 'USDT');

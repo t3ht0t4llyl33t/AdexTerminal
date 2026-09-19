@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
 import { getCachedData } from '@/selectors/apiConfig';
 import { getSupabase } from '@/lib/supabase-server';
 import { TONAPI_BASE, tonApiHeaders } from '@/lib/tonapi';
@@ -389,7 +390,10 @@ function buildAiVerdict(
     : 'Whale opened a new position — early accumulation phase.';
 }
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
+  const authUser = await requireTelegramUser(req);
+  if (!authUser) return unauthorized();
+
   const url = new URL(req.url);
   const wallet = url.searchParams.get('wallet');
   const token = url.searchParams.get('token');

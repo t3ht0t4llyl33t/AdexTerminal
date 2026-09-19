@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
 import { getSupabase } from '@/lib/supabase-server';
 import { TONAPI_BASE, tonApiHeaders } from '@/lib/tonapi';
+import { cachedJson } from '@/lib/edge-cache';
 import type { SecurityScan, Network } from '@/lib/types';
 
 const GECKO_TERMINAL_BASE = 'https://api.geckoterminal.com/api/v2';
@@ -668,11 +670,13 @@ async function incrementScanCount(tgUserId: string): Promise<void> {
 }
 
 export async function POST(req: NextRequest) {
+  const authUser = await requireTelegramUser(req);
+  if (!authUser) return unauthorized();
+
   try {
     const body = await req.json();
-    const { address, tgUserId, referralToken, referrerTgId } = body as {
+    const { address, referralToken, referrerTgId } = body as {
       address?: string;
-      tgUserId?: string;
       referralToken?: string;
       referrerTgId?: string;
     };
@@ -684,7 +688,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const tgUser = tgUserId || 'anonymous';
+    const tgUser = authUser.telegramUserId;
 
     if (referralToken && referrerTgId && tgUser !== 'anonymous') {
       try {
@@ -778,9 +782,12 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  const authUser = await requireTelegramUser(req);
+  if (!authUser) return unauthorized();
+
   try {
     const url = new URL(req.url);
-    const tgUserId = url.searchParams.get('tgUserId') || 'anonymous';
+    const tgUserId = authUser.telegramUserId;
     const supabase = getSupabase();
     const { data, error } = await supabase
       .from('scanner_audit_logs')
@@ -790,7 +797,12 @@ export async function GET(req: NextRequest) {
       .limit(5);
 
     if (error || !data) {
-      return NextResponse.json({ data: [], cached: false, timestamp: Date.now(), source: 'empty' });
+      return cachedJson(
+        req,
+        { data: [], cached: false, timestamp: Date.now(), source: 'empty' },
+        { sMaxAge: 30, swr: 120, staleReason: 'no_history' },
+        'fallback',
+      );
     }
 
     const scans: SecurityScan[] = data.map((row: Record<string, unknown>) => {
@@ -817,21 +829,18 @@ export async function GET(req: NextRequest) {
       } as SecurityScan;
     });
 
-    return NextResponse.json({
-      data: scans,
-      cached: false,
-      timestamp: Date.now(),
-      source: 'live',
-    }, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',
-      },
-    });
+    return cachedJson(
+      req,
+      { data: scans, cached: false, timestamp: Date.now(), source: 'live' },
+      { sMaxAge: 30, swr: 120 },
+      'live',
+    );
   } catch {
-    return NextResponse.json({ data: [], cached: false, timestamp: Date.now(), source: 'empty' }, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',
-      },
-    });
+    return cachedJson(
+      req,
+      { data: [], cached: false, timestamp: Date.now(), source: 'empty' },
+      { sMaxAge: 30, swr: 120, staleReason: 'db_error' },
+      'fallback',
+    );
   }
 }

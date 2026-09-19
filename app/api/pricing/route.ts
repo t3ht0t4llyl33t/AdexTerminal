@@ -1,8 +1,11 @@
-import { NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getSupabase } from '@/lib/supabase-server';
+import { cachedJson } from '@/lib/edge-cache';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+
+const CACHE_OPTS = { sMaxAge: 300, swr: 1800 };
 
 const FALLBACK = {
   price_ton: 3.3,
@@ -13,7 +16,7 @@ const FALLBACK = {
   updated_at: null as string | null,
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const supabase = getSupabase();
     const { data } = await supabase
@@ -23,12 +26,16 @@ export async function GET() {
       .maybeSingle();
 
     if (!data) {
-      return NextResponse.json({ ok: true, ...FALLBACK }, {
-        headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=1800' },
-      });
+      return cachedJson(
+        req,
+        { ok: true, ...FALLBACK },
+        { ...CACHE_OPTS, staleReason: 'no_row' },
+        'fallback',
+      );
     }
 
-    return NextResponse.json(
+    return cachedJson(
+      req,
       {
         ok: true,
         price_ton: Number(data.price_ton),
@@ -38,9 +45,15 @@ export async function GET() {
         source: data.source,
         updated_at: data.updated_at,
       },
-      { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=1800' } },
+      CACHE_OPTS,
+      'live',
     );
   } catch {
-    return NextResponse.json({ ok: true, ...FALLBACK });
+    return cachedJson(
+      req,
+      { ok: true, ...FALLBACK },
+      { ...CACHE_OPTS, staleReason: 'db_error' },
+      'fallback',
+    );
   }
 }

@@ -415,19 +415,12 @@ export function getWhalesFromCache(): WhaleAlert[] {
 }
 
 export async function startPollingLoop(): Promise<void> {
-  if (isPollingActive()) return;
-  if (isProCoinGeckoConfigured()) return;
+  // Retired: the in-process polling loop cannot survive serverless cold-starts.
+  // Radar data is now refreshed by the Vercel master cron at /api/cron/tick,
+  // which calls refreshNextNetwork() on a time-gated schedule.
+}
 
-  setPollingActive(true);
-
-  (async () => {
-    while (isPollingActive() && !isProCoinGeckoConfigured()) {
-      try {
-        await refreshNextNetwork();
-      } catch (err) {
-        console.error('[radar] refresh error:', err);
-      }
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-    }
-  })();
+export async function runRadarRefreshOnce(): Promise<{ ok: boolean }> {
+  await refreshNextNetwork();
+  return { ok: true };
 }

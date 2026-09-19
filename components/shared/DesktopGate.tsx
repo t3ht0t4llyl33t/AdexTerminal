@@ -155,6 +155,14 @@ export function DesktopGate({ lang }: DesktopGateProps) {
             <ArrowRight className="w-3 h-3" />
           </button>
 
+          <a
+            href="/welcome"
+            className="text-xs text-white/55 hover:text-white/85 transition-colors flex items-center gap-1.5"
+          >
+            {lang === 'RU' ? 'Узнать больше о продукте' : 'Learn more about the product'}
+            <ArrowRight className="w-3 h-3" />
+          </a>
+
           <p className="text-[11px] text-white/30 leading-relaxed">{t.hint}</p>
         </div>
       </div>

@@ -19,6 +19,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { formatUsd } from '@/components/shared/Format';
 import { cn } from '@/lib/utils';
 import { useTonConnectUI } from '@tonconnect/ui-react';
+import { trackEvent } from '@/lib/product-events';
+import { authFetch } from '@/lib/api-client';
 
 interface PartnersScreenProps {
   stats: ReferralStats;
@@ -37,19 +39,11 @@ export function PartnersScreen({ stats: initialStats, lang }: PartnersScreenProp
   const [tonConnectUI] = useTonConnectUI();
   const [liveStats, setLiveStats] = useState<ReferralStats>(initialStats);
 
-  const tgUserId = typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('tgWebAppData')?.split('user=')?.[1]?.split('&')?.[0] ?? 'demo_user'
-    : 'demo_user';
-
   const fetchPending = useCallback(async () => {
     try {
-      const res = await fetch('/api/referral-escrow', {
+      const res = await authFetch('/api/referral-escrow', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'get_pending',
-          telegram_user_id: tgUserId,
-        }),
+        body: JSON.stringify({ action: 'get_pending' }),
       });
       if (!res.ok) return;
       const data = await res.json();
@@ -57,15 +51,13 @@ export function PartnersScreen({ stats: initialStats, lang }: PartnersScreenProp
     } catch {
       // silent
     }
-  }, [tgUserId]);
+  }, []);
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch('/api/referral-stats', {
+      const res = await authFetch('/api/referral-stats', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          telegram_user_id: tgUserId, lang }),
+        body: JSON.stringify({ lang }),
       });
       if (!res.ok) return;
       const data = await res.json();
@@ -76,7 +68,7 @@ export function PartnersScreen({ stats: initialStats, lang }: PartnersScreenProp
     } catch {
       // silent
     }
-  }, [tgUserId, lang]);
+  }, [lang]);
 
   useEffect(() => {
     fetchPending();
@@ -86,6 +78,7 @@ export function PartnersScreen({ stats: initialStats, lang }: PartnersScreenProp
   const handleCopy = () => {
     navigator.clipboard.writeText(liveStats.referralLink).catch(() => {});
     setCopied(true);
+    trackEvent('referral_shared', { channel: 'copy' });
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -97,12 +90,10 @@ export function PartnersScreen({ stats: initialStats, lang }: PartnersScreenProp
     if (pendingAmount <= 0) return;
     setClaiming(true);
     try {
-      const res = await fetch('/api/referral-escrow', {
+      const res = await authFetch('/api/referral-escrow', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'claim',
-          telegram_user_id: tgUserId,
           wallet_address: addr,
         }),
       });
@@ -110,6 +101,7 @@ export function PartnersScreen({ stats: initialStats, lang }: PartnersScreenProp
         const data = await res.json();
         if (data.claimed > 0) {
           setClaimSuccess(true);
+          trackEvent('referral_claimed', { amount: data.claimed });
           setPendingAmount(0);
           setTimeout(() => setClaimSuccess(false), 4000);
         }
@@ -149,12 +141,10 @@ export function PartnersScreen({ stats: initialStats, lang }: PartnersScreenProp
 
   const handleDisconnect = async () => {
     try {
-      await fetch('/api/referral-escrow', {
+      await authFetch('/api/referral-escrow', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'disconnect',
-          telegram_user_id: tgUserId,
         }),
       });
     } catch {
@@ -168,6 +158,7 @@ export function PartnersScreen({ stats: initialStats, lang }: PartnersScreenProp
   const handleShareTelegram = () => {
     const shareText = translate(lang, 'partners.shareMessage');
     const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(liveStats.referralLink)}&text=${encodeURIComponent(shareText)}`;
+    trackEvent('referral_shared', { channel: 'telegram' });
     if (typeof window !== 'undefined') {
       const tg = (window as unknown as { Telegram?: { WebApp?: { openTelegramLink?: (url: string) => void } } }).Telegram;
       if (tg?.WebApp?.openTelegramLink) {
@@ -181,6 +172,7 @@ export function PartnersScreen({ stats: initialStats, lang }: PartnersScreenProp
   const handleShareTwitter = () => {
     const shareText = translate(lang, 'partners.shareMessage');
     const tweetUrl = `https://x.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(liveStats.referralLink)}`;
+    trackEvent('referral_shared', { channel: 'twitter' });
     if (typeof window !== 'undefined') {
       window.open(tweetUrl, '_blank', 'noopener,noreferrer');
     }

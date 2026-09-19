@@ -1,15 +1,17 @@
-import { NextResponse } from 'next/server';
-import { fetchRadarData, startPollingLoop } from '@/selectors/apiConfig';
+import { NextRequest } from 'next/server';
+import { fetchRadarData } from '@/selectors/apiConfig';
+import { cachedJson } from '@/lib/edge-cache';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export async function GET() {
-  startPollingLoop();
+const CACHE_OPTS = { sMaxAge: 30, swr: 120 };
 
+export async function GET(req: NextRequest) {
   try {
     const data = await fetchRadarData();
-    return NextResponse.json(
+    return cachedJson(
+      req,
       {
         data: data.tokens,
         cached: false,
@@ -17,13 +19,16 @@ export async function GET() {
         source: data.source,
         whales: data.whales,
       },
-      { headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' } },
+      CACHE_OPTS,
+      'live',
     );
   } catch (err) {
     console.error('[radar] route error:', err);
-    return NextResponse.json(
+    return cachedJson(
+      req,
       { data: [], cached: true, timestamp: Date.now(), source: 'cache' },
-      { headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' } },
+      { ...CACHE_OPTS, staleReason: 'upstream_failed' },
+      'fallback',
     );
   }
 }

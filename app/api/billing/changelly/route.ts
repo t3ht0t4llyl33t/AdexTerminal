@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -7,7 +8,10 @@ const CHANGELLY_PARTNER_ID = process.env.CHANGELLY_PARTNER_ID || '';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const authUser = await requireTelegramUser(req);
+    if (!authUser) return unauthorized();
+
+    const body = await req.json().catch(() => ({}));
     const { destination_address, source_currency } = body as {
       destination_address?: string;
       source_currency?: string;

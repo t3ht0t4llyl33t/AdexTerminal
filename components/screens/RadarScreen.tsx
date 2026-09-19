@@ -9,9 +9,16 @@ import { DeltaBar } from '@/components/shared/DeltaBar';
 import { CopyButton } from '@/components/shared/CopyButton';
 import { FiltersBar } from '@/components/shared/FiltersBar';
 import { NetworkSwitcher } from '@/components/shared/NetworkSwitcher';
+import { WatchlistHeart } from '@/components/shared/WatchlistHeart';
+import { ScamodarCard } from '@/components/shared/ScamodarCard';
 import { formatUsd, formatAddress } from '@/components/shared/Format';
 import { cn } from '@/lib/utils';
 import { buildTradeLink, type TradeSettings, DEFAULT_TRADE_SETTINGS } from '@/lib/trade-links';
+
+export interface WatchlistKey {
+  network: string;
+  address: string;
+}
 
 interface RadarScreenProps {
   tokens: TokenRow[];
@@ -23,6 +30,9 @@ interface RadarScreenProps {
   tradeSettings?: TradeSettings;
   proSettings?: ProSettings;
   onProSettingsChange?: (settings: Partial<ProSettings>) => void;
+  watchlist?: WatchlistKey[];
+  watchlistLimit?: number | null;
+  onToggleWatch?: (token: TokenRow, next: boolean) => void;
 }
 
 type SortKey = 'volume24h' | 'volumeSpike15m';
@@ -38,12 +48,26 @@ export function RadarScreen({
   tradeSettings = DEFAULT_TRADE_SETTINGS,
   proSettings,
   onProSettingsChange,
+  watchlist = [],
+  watchlistLimit = 5,
+  onToggleWatch,
 }: RadarScreenProps) {
   const spikeThreshold = proSettings?.radar_min_spike ?? 50;
   const minLiquidity = proSettings?.radar_min_liquidity ?? 0;
   const [tooltipRow, setTooltipRow] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('volumeSpike15m');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [viewMode, setViewMode] = useState<'all' | 'watch'>('all');
+
+  const watchSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const w of watchlist) s.add(`${w.network}:${w.address.toLowerCase()}`);
+    return s;
+  }, [watchlist]);
+
+  const isWatched = (t: TokenRow) => watchSet.has(`${t.network}:${t.address.toLowerCase()}`);
+  const atLimit =
+    typeof watchlistLimit === 'number' && watchlist.length >= watchlistLimit;
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -57,7 +81,8 @@ export function RadarScreen({
   const filtered = useMemo(() => {
     const result = tokens.filter((t) => {
       if (!networks.includes(t.network)) return false;
-      if (isPro) {
+      if (viewMode === 'watch' && !watchSet.has(`${t.network}:${t.address.toLowerCase()}`)) return false;
+      if (isPro && viewMode === 'all') {
         if (t.volumeSpike15m < spikeThreshold) return false;
         if (t.liquidity < minLiquidity) return false;
       }
@@ -67,8 +92,8 @@ export function RadarScreen({
       const cmp = sortKey === 'volume24h' ? a.volume24h - b.volume24h : a.volumeSpike15m - b.volumeSpike15m;
       return sortDir === 'asc' ? cmp : -cmp;
     });
-    return result.slice(0, 50);
-  }, [tokens, networks, isPro, spikeThreshold, minLiquidity, sortKey, sortDir]);
+    return viewMode === 'watch' ? result : result.slice(0, 50);
+  }, [tokens, networks, isPro, spikeThreshold, minLiquidity, sortKey, sortDir, viewMode, watchSet]);
 
   const SortIcon = ({ col }: { col: SortKey }) => (
     <span className="flex h-3 w-3 items-center justify-center flex-shrink-0">
@@ -116,6 +141,33 @@ export function RadarScreen({
           <div className="mt-0.5 text-sm sm:text-base font-mono font-bold text-fuchsia-200 truncate">+{Math.max(...filtered.map((token) => token.volumeSpike15m), 0)}%</div>
           <div className="text-[8px] sm:text-[10px] text-fuchsia-200/50 mt-0.5 truncate">{lang === 'RU' ? '15 мин' : '15 min'}</div>
         </div>
+      </div>
+
+      <ScamodarCard lang={lang} variant="app" />
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setViewMode('all')}
+          className={cn(
+            'flex-1 rounded-lg border px-3 py-2 text-[11px] font-mono uppercase tracking-widest transition-colors',
+            viewMode === 'all'
+              ? 'border-fuchsia-400/50 bg-fuchsia-400/10 text-fuchsia-100'
+              : 'border-white/10 bg-white/[0.02] text-white/60 hover:text-white',
+          )}
+        >
+          {lang === 'RU' ? 'Все токены' : 'All tokens'}
+        </button>
+        <button
+          onClick={() => setViewMode('watch')}
+          className={cn(
+            'flex-1 rounded-lg border px-3 py-2 text-[11px] font-mono uppercase tracking-widest transition-colors',
+            viewMode === 'watch'
+              ? 'border-amber-300/50 bg-amber-300/10 text-amber-100'
+              : 'border-white/10 bg-white/[0.02] text-white/60 hover:text-white',
+          )}
+        >
+          {lang === 'RU' ? `Мой список (${watchlist.length})` : `My list (${watchlist.length})`}
+        </button>
       </div>
 
       <NetworkSwitcher lang={lang} networks={networks} onNetworksChange={onNetworksChange} />
@@ -187,8 +239,12 @@ export function RadarScreen({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-white/30 text-sm">
-                  {translate(lang, 'radar.noData')}
+                <td colSpan={7} className="px-4 py-12 text-center text-white/40 text-sm">
+                  {viewMode === 'watch'
+                    ? lang === 'RU'
+                      ? 'Список пуст. Нажмите звёздочку рядом с токеном, чтобы добавить его сюда.'
+                      : 'Your list is empty. Tap the star next to any token to add it here.'
+                    : translate(lang, 'radar.noData')}
                 </td>
               </tr>
             ) : (
@@ -204,6 +260,26 @@ export function RadarScreen({
                   >
                     <td className="relative z-20 min-w-0 overflow-visible px-1.5 sm:px-3 py-2.5">
                       <div className="flex items-start gap-2">
+                        {onToggleWatch ? (
+                          <WatchlistHeart
+                            active={isWatched(token)}
+                            disabled={!isWatched(token) && atLimit}
+                            title={
+                              isWatched(token)
+                                ? lang === 'RU'
+                                  ? 'Убрать из моего списка'
+                                  : 'Remove from my list'
+                                : atLimit
+                                  ? lang === 'RU'
+                                    ? `Лимит ${watchlistLimit} токенов — откройте PRO, чтобы снять ограничение`
+                                    : `Free plan holds up to ${watchlistLimit} tokens — unlock PRO for unlimited`
+                                  : lang === 'RU'
+                                    ? 'Добавить в мой список'
+                                    : 'Add to my list'
+                            }
+                            onToggle={(next) => onToggleWatch(token, next)}
+                          />
+                        ) : null}
                         <div className="w-7 h-7 rounded-full bg-bg-hover border border-bg-border flex items-center justify-center text-[9px] font-mono font-bold text-accent-light flex-shrink-0">
                           {token.symbol.slice(0, 2)}
                         </div>

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getHighloadAddress } from '@/lib/ton-payout';
+import { recordLightningBoostGrantIfEligible } from '@/lib/lightning-boost';
+import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -26,15 +28,18 @@ async function getReferrer(supabase: ReturnType<typeof getSupabase>, tgUserId: s
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { telegram_user_id, sender_address, tx_hash, amount_ton } = body as {
-      telegram_user_id?: string;
+    const authUser = await requireTelegramUser(req);
+    if (!authUser) return unauthorized();
+    const telegram_user_id = authUser.telegramUserId;
+
+    const body = await req.json().catch(() => ({}));
+    const { sender_address: _sender_address, tx_hash, amount_ton } = body as {
       sender_address?: string;
       tx_hash?: string;
       amount_ton?: number;
     };
 
-    if (!telegram_user_id || !tx_hash || !amount_ton) {
+    if (!tx_hash || !amount_ton) {
       return NextResponse.json({ error: 'missing required fields' }, { status: 400 });
     }
 
@@ -70,6 +75,8 @@ export async function POST(req: NextRequest) {
       pro_expiration_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: 'telegram_user_id' });
+
+    await recordLightningBoostGrantIfEligible(supabase, telegram_user_id, PREMIUM_PRICE_USD);
 
     if (referrerTgId) {
       try {

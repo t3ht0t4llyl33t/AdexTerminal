@@ -1,10 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getSupabase } from '@/lib/supabase-server';
 import { getWhalesFromCache } from '@/selectors/apiConfig';
+import { cachedJson } from '@/lib/edge-cache';
 import type { WhaleAlert } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+
+const CACHE_OPTS = { sMaxAge: 30, swr: 120 };
 
 async function loadFromDb(): Promise<WhaleAlert[] | null> {
   try {
@@ -21,29 +24,31 @@ async function loadFromDb(): Promise<WhaleAlert[] | null> {
   }
 }
 
-export async function GET() {
-  const cacheHeaders = {
-    'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',
-  };
-
+export async function GET(req: NextRequest) {
   const memory = getWhalesFromCache();
   if (memory.length > 0) {
-    return NextResponse.json(
+    return cachedJson(
+      req,
       { data: memory, cached: true, timestamp: Date.now(), source: 'cache' },
-      { headers: cacheHeaders },
+      CACHE_OPTS,
+      'live',
     );
   }
 
   const db = await loadFromDb();
   if (db && db.length > 0) {
-    return NextResponse.json(
+    return cachedJson(
+      req,
       { data: db, cached: true, timestamp: Date.now(), source: 'cache' },
-      { headers: cacheHeaders },
+      CACHE_OPTS,
+      'live',
     );
   }
 
-  return NextResponse.json(
+  return cachedJson(
+    req,
     { data: [], cached: true, timestamp: Date.now(), source: 'cache' },
-    { headers: cacheHeaders },
+    { ...CACHE_OPTS, staleReason: 'no_data' },
+    'fallback',
   );
 }
