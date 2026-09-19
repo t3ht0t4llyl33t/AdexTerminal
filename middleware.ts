@@ -19,6 +19,22 @@ function getRateLimitMap(): Map<string, RateLimitEntry> {
   return globalThis.adexRateLimitMap;
 }
 
+function extractUnverifiedUserId(initData: string): string | null {
+  if (!initData) return null;
+  try {
+    const params = new URLSearchParams(initData);
+    const userRaw = params.get('user');
+    if (!userRaw) return null;
+    const parsed = JSON.parse(userRaw);
+    const rawId = parsed?.id;
+    if (typeof rawId !== 'number' && typeof rawId !== 'string') return null;
+    const id = String(rawId).trim();
+    return /^[0-9]{1,20}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -26,7 +42,12 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  if (pathname.startsWith('/api/support/webhook') || pathname.startsWith('/api/partnerships/webhook')) {
+  if (
+    pathname.startsWith('/api/support/webhook') ||
+    pathname.startsWith('/api/partnerships/webhook') ||
+    pathname.startsWith('/api/billing/crypto-pay-webhook') ||
+    pathname.startsWith('/api/cron/')
+  ) {
     return NextResponse.next();
   }
 
@@ -35,8 +56,9 @@ export function middleware(req: NextRequest) {
     req.headers.get('x-real-ip') ||
     'unknown';
 
-  const tgUserId = req.headers.get('x-telegram-user-id') || '';
-  const key = tgUserId || ip;
+  const initData = req.headers.get('x-telegram-init-data') || '';
+  const tgId = extractUnverifiedUserId(initData);
+  const key = tgId ? `tg:${tgId}` : `ip:${ip}`;
 
   const map = getRateLimitMap();
   const now = Date.now();
