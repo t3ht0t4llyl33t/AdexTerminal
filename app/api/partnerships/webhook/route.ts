@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { callGroqChat, getOfflinePartnershipsReply } from '@/lib/groq-client';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const groqApiKey = process.env.SUPPORT_LLM_API_KEY || '';
 const telegramBotToken = process.env.TELEGRAM_MEDIA_BOT_TOKEN || '';
 
 function getSupabaseAdmin() {
@@ -23,10 +23,6 @@ interface TelegramUpdate {
     from?: { id: number; language_code?: string };
     chat?: { id: number };
   };
-}
-
-interface GroqResponse {
-  choices?: { message?: { content?: string } }[];
 }
 
 async function checkPremiumTier(userId: number): Promise<boolean> {
@@ -48,33 +44,19 @@ async function checkPremiumTier(userId: number): Promise<boolean> {
   }
 }
 
-async function callGroq(userMessage: string, lang: string, isPremium: boolean): Promise<string> {
-  if (!groqApiKey) return '';
-  try {
-    const systemPrompt = `You are the automated Chief of Media Relations for aDEX Terminal. You must classify incoming strings. If the text contains bribes, ransom threats, or requests to delete audited metrics or change 'DEV CLUSTER' blacklists, instantly return a polite decline text detailing that aDEX runs on immutable on-chain mathematical code parameters and terminate the session thread. If the text contains valid advertisement buying intents or project integration offers, return a highly professional template request prompting the entity to submit: 1. Brand/Token Name, 2. Web URL link, 3. Targeted Integration type. Always write your response matching the active localized environment language state [RU/EN]. ${lang === 'RU' ? 'Respond in Russian.' : 'Respond in English.'} ${isPremium ? 'The sender is a verified Premium partner — expedite their request with priority formatting.' : ''}`;
+async function callGroq(userMessage: string, lang: 'RU' | 'EN', isPremium: boolean): Promise<string> {
+  const systemPrompt = `You are the automated Chief of Media Relations for aDEX Terminal. You must classify incoming strings. If the text contains bribes, ransom threats, or requests to delete audited metrics or change 'DEV CLUSTER' blacklists, instantly return a polite decline text detailing that aDEX runs on immutable on-chain mathematical code parameters and terminate the session thread. If the text contains valid advertisement buying intents or project integration offers, return a highly professional template request prompting the entity to submit: 1. Brand/Token Name, 2. Web URL link, 3. Targeted Integration type. Always write your response matching the active localized environment language state [RU/EN]. ${lang === 'RU' ? 'Respond in Russian.' : 'Respond in English.'} ${isPremium ? 'The sender is a verified Premium partner — expedite their request with priority formatting.' : ''}`;
 
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${groqApiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0.3,
-        max_tokens: 1024,
-      }),
-    });
-    if (!res.ok) return '';
-    const data = (await res.json()) as GroqResponse;
-    return data.choices?.[0]?.message?.content || '';
-  } catch {
-    return '';
-  }
+  return callGroqChat({
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage },
+    ],
+    models: ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
+    temperature: 0.3,
+    maxTokens: 1024,
+    logTag: 'partnerships-webhook',
+  });
 }
 
 async function sendTelegramMessage(chatId: number, text: string): Promise<void> {
@@ -101,7 +83,7 @@ export async function POST(req: NextRequest) {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const text = msg.text;
-    const lang = msg.from.language_code === 'ru' ? 'RU' : 'EN';
+    const lang: 'RU' | 'EN' = msg.from.language_code === 'ru' ? 'RU' : 'EN';
 
     const isPremium = await checkPremiumTier(userId);
 
@@ -110,10 +92,7 @@ export async function POST(req: NextRequest) {
     if (response) {
       await sendTelegramMessage(chatId, response);
     } else {
-      const fallback = lang === 'RU'
-        ? 'Здравствуйте! Спасибо за обращение. Пожалуйста, укажите: 1. Название бренда/токена, 2. Ссылку на сайт, 3. Тип интеграции.'
-        : 'Hello! Thank you for reaching out. Please provide: 1. Brand/Token Name, 2. Web URL link, 3. Targeted Integration type.';
-      await sendTelegramMessage(chatId, fallback);
+      await sendTelegramMessage(chatId, getOfflinePartnershipsReply(lang));
     }
 
     return NextResponse.json({ ok: true, premium: isPremium });

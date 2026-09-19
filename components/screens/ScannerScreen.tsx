@@ -345,6 +345,172 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
 
           {/* Security checks grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {displayScan.network === 'TON' && displayScan.ton ? (
+              <>
+                {/* Card 1 (TON): Mint status */}
+                <div className={cn('p-4', cardCls, cardShadow)}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div
+                      className={cn(
+                        'w-9 h-9 rounded-xl border flex items-center justify-center',
+                        displayScan.ton.mintStatus === 'mintable'
+                          ? 'bg-red-400/10 border-red-300/50 shadow-[0_0_12px_rgba(239,68,68,0.2)]'
+                          : 'bg-emerald-400/10 border-emerald-300/50 shadow-[0_0_12px_rgba(52,211,153,0.2)]',
+                      )}
+                    >
+                      <Zap
+                        className={cn(
+                          'w-4 h-4',
+                          displayScan.ton.mintStatus === 'mintable' ? 'text-red-400' : 'text-emerald-300',
+                        )}
+                      />
+                    </div>
+                    <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">
+                      {translate(lang, 'scanner.tonMintTitle')}
+                    </span>
+                  </div>
+                  <div
+                    className={cn(
+                      'text-sm font-mono font-bold',
+                      displayScan.ton.mintStatus === 'mintable' ? 'text-red-400' : 'text-emerald-300',
+                    )}
+                  >
+                    {displayScan.ton.mintStatus === 'mintable'
+                      ? translate(lang, 'scanner.tonMintMintable')
+                      : translate(lang, 'scanner.tonMintNotMintable')}
+                  </div>
+                </div>
+
+                {/* Card 2 (TON): Owner status */}
+                <div className={cn('p-4', cardCls, cardShadow)}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div
+                      className={cn(
+                        'w-9 h-9 rounded-xl border flex items-center justify-center',
+                        displayScan.ton.ownerStatus === 'active_admin'
+                          ? 'bg-amber-400/10 border-amber-300/50 shadow-[0_0_12px_rgba(251,191,36,0.2)]'
+                          : 'bg-emerald-400/10 border-emerald-300/50 shadow-[0_0_12px_rgba(52,211,153,0.2)]',
+                      )}
+                    >
+                      {displayScan.ton.ownerStatus === 'active_admin' ? (
+                        <Unlock className="w-4 h-4 text-amber-300" />
+                      ) : (
+                        <Lock className="w-4 h-4 text-emerald-300" />
+                      )}
+                    </div>
+                    <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">
+                      {translate(lang, 'scanner.tonOwnerTitle')}
+                    </span>
+                  </div>
+                  <div
+                    className={cn(
+                      'text-sm font-mono font-bold',
+                      displayScan.ton.ownerStatus === 'active_admin' ? 'text-amber-300' : 'text-emerald-300',
+                    )}
+                  >
+                    {displayScan.ton.ownerStatus === 'active_admin'
+                      ? translate(lang, 'scanner.tonOwnerActive')
+                      : displayScan.ton.ownerStatus === 'renounced'
+                        ? translate(lang, 'scanner.tonOwnerRenounced')
+                        : translate(lang, 'scanner.tonOwnerUnknown')}
+                  </div>
+                </div>
+
+                {/* Card 3 (TON): LP distribution */}
+                <div className={cn('p-4', cardCls, cardShadow)}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div
+                      className={cn(
+                        'w-9 h-9 rounded-xl border flex items-center justify-center',
+                        displayScan.ton.lpDexList.length === 0
+                          ? 'bg-red-400/10 border-red-300/50 shadow-[0_0_12px_rgba(239,68,68,0.2)]'
+                          : displayScan.ton.lpTotalUsd < 5000
+                            ? 'bg-amber-400/10 border-amber-300/50 shadow-[0_0_12px_rgba(251,191,36,0.2)]'
+                            : 'bg-emerald-400/10 border-emerald-300/50 shadow-[0_0_12px_rgba(52,211,153,0.2)]',
+                      )}
+                    >
+                      <Network
+                        className={cn(
+                          'w-4 h-4',
+                          displayScan.ton.lpDexList.length === 0
+                            ? 'text-red-400'
+                            : displayScan.ton.lpTotalUsd < 5000
+                              ? 'text-amber-300'
+                              : 'text-emerald-300',
+                        )}
+                      />
+                    </div>
+                    <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">
+                      {translate(lang, 'scanner.tonLpTitle')}
+                    </span>
+                  </div>
+                  <div
+                    className={cn(
+                      'text-sm font-mono font-bold',
+                      displayScan.ton.lpDexList.length === 0
+                        ? 'text-red-400'
+                        : displayScan.ton.lpTotalUsd < 5000
+                          ? 'text-amber-300'
+                          : 'text-emerald-300',
+                    )}
+                  >
+                    {displayScan.ton.lpDexList.length === 0
+                      ? translate(lang, 'scanner.tonLpNoPools')
+                      : displayScan.ton.lpTotalUsd < 5000
+                        ? translate(lang, 'scanner.tonLpLow')
+                        : interpolate(translate(lang, 'scanner.tonLpHealthy'), {
+                            dexes: displayScan.ton.lpDexList.map((d) => d.toUpperCase()).join(' + '),
+                          })}
+                  </div>
+                  {displayScan.ton.lpDexList.length > 0 && (
+                    <div className="text-[10px] font-mono text-white/30 mt-1.5">
+                      {translate(lang, 'scanner.tonLiquidityLabel')}: ${displayScan.ton.lpTotalUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Card 4 (TON): Insider concentration (system contracts filtered out) */}
+                <div className={cn('p-4', cardCls, cardShadow)}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div
+                      className={cn(
+                        'w-9 h-9 rounded-xl border flex items-center justify-center',
+                        hasDevCluster
+                          ? 'bg-red-400/10 border-red-300/50 shadow-[0_0_12px_rgba(239,68,68,0.2)]'
+                          : 'bg-emerald-400/10 border-emerald-300/50 shadow-[0_0_12px_rgba(52,211,153,0.2)]',
+                      )}
+                    >
+                      <AlertTriangle
+                        className={cn(
+                          'w-4 h-4',
+                          hasDevCluster ? 'text-red-400' : 'text-emerald-300',
+                        )}
+                      />
+                    </div>
+                    <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">
+                      {translate(lang, 'scanner.card4Title')}
+                    </span>
+                  </div>
+                  <div
+                    className={cn(
+                      'text-sm font-mono font-bold',
+                      hasDevCluster ? 'text-red-400' : 'text-emerald-300',
+                    )}
+                  >
+                    {displayScan.ton.nonSystemTopHolderPct.toFixed(1)}%{' '}
+                    <span className="text-white/40 font-normal">
+                      ({hasDevCluster ? translate(lang, 'scanner.highRisk') : translate(lang, 'scanner.lowRisk')})
+                    </span>
+                  </div>
+                  <div className="text-[10px] font-mono text-white/30 mt-1.5">
+                    {displayScan.ton.verifiedByTonapi
+                      ? translate(lang, 'scanner.tonVerifiedYes')
+                      : translate(lang, 'scanner.tonVerifiedNo')}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
             {/* Card 1: Liquidity Lock */}
             <div className={cn('p-4', cardCls, cardShadow)}>
               <div className="flex items-center gap-2 mb-3">
@@ -488,10 +654,58 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
                 </span>
               </div>
             </div>
+
+            </>
+            )}
           </div>
 
-          {/* Tax details */}
+          {/* Metric strip: TON shows liquidity/pools/risk; EVM shows tax/tax/risk */}
           <div className="grid grid-cols-3 gap-3">
+            {displayScan.network === 'TON' && displayScan.ton ? (
+              <>
+                <div className={cn('p-3 text-center', cardCls)}>
+                  <div className="text-[9px] font-mono text-white/30 uppercase mb-1.5">
+                    {translate(lang, 'scanner.tonPoolsFound')}
+                  </div>
+                  <div
+                    className={cn(
+                      'text-base font-mono font-bold',
+                      displayScan.ton.lpDexList.length === 0 ? 'text-red-400' : 'text-emerald-300',
+                    )}
+                  >
+                    {displayScan.ton.lpDexList.length}
+                  </div>
+                </div>
+                <div className={cn('p-3 text-center', cardCls)}>
+                  <div className="text-[9px] font-mono text-white/30 uppercase mb-1.5">
+                    {translate(lang, 'scanner.tonAgeLabel')}
+                  </div>
+                  <div className="text-base font-mono font-bold text-white/80">
+                    {displayScan.ton.jettonAgeDays !== null
+                      ? interpolate(translate(lang, 'scanner.tonAgeDays'), { days: displayScan.ton.jettonAgeDays })
+                      : translate(lang, 'scanner.tonAgeUnknown')}
+                  </div>
+                </div>
+                <div className={cn('p-3 text-center', cardCls)}>
+                  <div className="text-[9px] font-mono text-white/30 uppercase mb-1.5">
+                    {translate(lang, 'scanner.riskScore')}
+                  </div>
+                  <div
+                    className={cn(
+                      'text-base font-mono font-bold',
+                      displayScan.riskScore > 60
+                        ? 'text-red-400'
+                        : displayScan.riskScore > 30
+                          ? 'text-amber-300'
+                          : 'text-emerald-300',
+                    )}
+                  >
+                    {displayScan.riskScore}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
             <div className={cn('p-3 text-center', cardCls)}>
               <div className="text-[9px] font-mono text-white/30 uppercase mb-1.5">
                 {translate(lang, 'scanner.buyTax')}
@@ -535,6 +749,8 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
                 {displayScan.riskScore}
               </div>
             </div>
+            </>
+            )}
           </div>
 
           {/* Apex AI Verdict Terminal */}

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
 import { getSupabase } from '@/lib/supabase-server';
-import { TONAPI_BASE, tonApiHeaders } from '@/lib/tonapi';
 import { cachedJson } from '@/lib/edge-cache';
+import { auditTonJetton } from '@/lib/ton-scanner';
 import type { SecurityScan, Network } from '@/lib/types';
 
 const GECKO_TERMINAL_BASE = 'https://api.geckoterminal.com/api/v2';
@@ -228,165 +228,6 @@ async function fetchGoPlusForEvm(address: string): Promise<GoPlusData | null> {
   return null;
 }
 
-interface TonPoolData {
-  totalHolders: number;
-  topHolderPercent: number;
-  topHolders: HolderInfo[];
-  lpLocked: boolean;
-  lpLockPercent: number;
-  lpLockedUntil: string | null;
-  devCluster: boolean;
-  devWalletCount: number;
-  riskScore: number;
-}
-
-interface TonJettonMeta {
-  adminAddress: string | null;
-  totalHolders: number;
-}
-
-async function fetchTonJettonMeta(address: string): Promise<TonJettonMeta | null> {
-  try {
-    const res = await fetch(
-      `${TONAPI_BASE}/jettons/${address}`,
-      { headers: tonApiHeaders(), signal: AbortSignal.timeout(6000) },
-    );
-    if (!res.ok) return null;
-    const json = await res.json();
-    const admin = json?.admin_address ?? json?.metadata?.admin_address ?? null;
-    const holders = json?.holders_count ?? 0;
-    return { adminAddress: admin, totalHolders: holders };
-  } catch {
-    return null;
-  }
-}
-
-async function fetchTonHolders(address: string): Promise<HolderInfo[]> {
-  try {
-    const res = await fetch(
-      `${TONAPI_BASE}/jettons/${address}/holders`,
-      { headers: tonApiHeaders(), signal: AbortSignal.timeout(6000) },
-    );
-    if (!res.ok) return [];
-    const json = await res.json();
-    const raw = json?.holders;
-    if (!Array.isArray(raw)) return [];
-
-    const holders: HolderInfo[] = [];
-    for (const h of raw) {
-      const pct = parseFloat(h?.percentage ?? '0') || 0;
-      if (pct > 0) {
-        holders.push({ address: h?.owner ?? h?.address ?? '', percent: pct });
-      }
-    }
-    return holders;
-  } catch {
-    return [];
-  }
-}
-
-async function fetchTonPoolData(address: string): Promise<TonPoolData | null> {
-  try {
-    const poolRes = await fetch(
-      `${GECKO_TERMINAL_BASE}/networks/ton/tokens/${address}/pools`,
-      { signal: AbortSignal.timeout(8000) },
-    );
-    if (!poolRes.ok) return null;
-    const poolJson = await poolRes.json();
-    const pools = poolJson?.data;
-    if (!Array.isArray(pools) || pools.length === 0) return null;
-
-    const pool = pools[0];
-    const attrs = pool?.attributes ?? {};
-
-    const reserveUsd = parseFloat(attrs.reserve_in_usd ?? '0') || 0;
-    const volume24h = parseFloat(attrs.volume_usd?.h24 ?? '0') || 0;
-
-    let totalHolders = 0;
-
-    try {
-      const holdersRes = await fetch(
-        `${GECKO_TERMINAL_BASE}/networks/ton/tokens/${address}/info`,
-        { signal: AbortSignal.timeout(5000) },
-      );
-      if (holdersRes.ok) {
-        const holdersJson = await holdersRes.json();
-        const infoAttrs = holdersJson?.data?.attributes;
-        if (infoAttrs) {
-          totalHolders = parseInt(infoAttrs.holder_count ?? '0', 10) || 0;
-        }
-      }
-    } catch {
-      // holders count is best-effort
-    }
-
-    const [meta, tonHolders] = await Promise.all([
-      fetchTonJettonMeta(address),
-      fetchTonHolders(address),
-    ]);
-
-    if (meta?.totalHolders && totalHolders === 0) {
-      totalHolders = meta.totalHolders;
-    }
-
-    const topHolders = tonHolders.length > 0 ? tonHolders : [];
-    const topHolderPercent = topHolders.length > 0 ? topHolders[0].percent : 0;
-
-    const lpLocked = false;
-    const lpLockPercent = 0;
-    const lpLockedUntil = null;
-
-    const adminAddress = meta?.adminAddress ?? null;
-    const adminInHolders = adminAddress
-      ? topHolders.findIndex((h) => h.address === adminAddress)
-      : -1;
-
-    let devCluster = false;
-    let devWalletCount = 0;
-
-    if (adminInHolders >= 0 && topHolders[adminInHolders].percent >= 10) {
-      devCluster = true;
-      devWalletCount = 1;
-    }
-
-    if (!devCluster) {
-      const concentrationThreshold = 5;
-      const concentrated = topHolders.filter((h) => h.percent >= concentrationThreshold);
-      if (concentrated.length >= 3) {
-        devCluster = true;
-        devWalletCount = concentrated.length;
-      }
-    }
-
-    if (!devCluster && reserveUsd === 0) {
-      devCluster = true;
-      devWalletCount = 1;
-    }
-
-    let riskScore = 0;
-    if (reserveUsd === 0) riskScore += 25;
-    if (topHolderPercent > 25) riskScore += 20;
-    if (topHolderPercent > 50) riskScore += 15;
-    if (totalHolders < 100) riskScore += 15;
-    if (devCluster && adminInHolders >= 0) riskScore += 20;
-    riskScore = Math.min(100, riskScore);
-
-    return {
-      totalHolders,
-      topHolderPercent,
-      topHolders,
-      lpLocked,
-      lpLockPercent,
-      lpLockedUntil,
-      devCluster,
-      devWalletCount,
-      riskScore,
-    };
-  } catch (err) {
-    console.error(`[scanner] GeckoTerminal TON fetch failed for ${address}:`, err);
-    return null;
-  }
-}
 
 async function fetchTokenSymbol(address: string, network: Network): Promise<string> {
   const networkId = network === 'TON' ? 'ton' : network === 'BSC' ? 'bsc' : 'base';
@@ -439,23 +280,46 @@ async function generateAudit(address: string): Promise<AuditResult> {
       throw new Error('GoPlus security API returned no data for this EVM contract');
     }
   } else {
-    const tonData = await fetchTonPoolData(address);
+    const tonData = await auditTonJetton(address);
     if (tonData) {
+      const detectedSymbol = tonData.tokenSymbol && tonData.tokenSymbol !== 'UNKNOWN'
+        ? tonData.tokenSymbol
+        : tokenSymbol;
+      const hasPools = tonData.details.lpDexList.length > 0;
+      const topPct = tonData.details.nonSystemTopHolderPct;
+      const concentratedNonSystem = tonData.filteredTopHolders.filter((h) => h.percent >= 5);
+      const devCluster =
+        tonData.details.mintStatus === 'mintable' ||
+        tonData.details.ownerStatus === 'active_admin' ||
+        concentratedNonSystem.length >= 3;
+      const devWalletCount = devCluster
+        ? Math.max(concentratedNonSystem.length, tonData.details.ownerStatus === 'active_admin' ? 1 : 0)
+        : 0;
+
       scan = {
         id: `scan-${Date.now()}`,
-        tokenSymbol,
+        tokenSymbol: detectedSymbol,
         network,
         address,
-        lpLocked: tonData.lpLocked,
-        lpLockedUntil: tonData.lpLockedUntil,
-        lpLockPercent: tonData.lpLockPercent,
-        devCluster: tonData.devCluster,
-        devWalletCount: tonData.devWalletCount,
+        lpLocked: false,
+        lpLockedUntil: null,
+        lpLockPercent: 0,
+        devCluster,
+        devWalletCount,
         honeypot: false,
-        buyTax: 0, sellTax: 0, contractVerified: false, canRenounce: false,
-        ownerRenounced: false, totalHolders: tonData.totalHolders,
-        topHolderPercent: tonData.topHolderPercent, riskScore: tonData.riskScore,
+        buyTax: 0,
+        sellTax: 0,
+        contractVerified: tonData.details.verifiedByTonapi,
+        canRenounce: false,
+        ownerRenounced: tonData.details.ownerStatus === 'renounced',
+        totalHolders: tonData.totalHolders,
+        topHolderPercent: topPct,
+        riskScore: tonData.details.score,
+        ton: tonData.details,
       };
+      if (!hasPools) {
+        scan.riskScore = Math.max(scan.riskScore, 70);
+      }
     } else {
       throw new Error('TON security API returned no data for this contract');
     }
@@ -465,7 +329,7 @@ async function generateAudit(address: string): Promise<AuditResult> {
   if (scan.honeypot || scan.riskScore >= 60) {
     verdictKey = 'scanner.verdictDanger';
   } else if (network === 'TON') {
-    verdictKey = 'scanner.verdictCaution';
+    verdictKey = scan.riskScore >= 26 ? 'scanner.verdictCaution' : 'scanner.verdictSafe';
   } else if (scan.riskScore >= 30 || !scan.lpLocked) {
     verdictKey = 'scanner.verdictCaution';
   } else {
@@ -826,6 +690,7 @@ export async function GET(req: NextRequest) {
         totalHolders: (audit?.totalHolders as number) ?? 0,
         topHolderPercent: (audit?.topHolderPercent as number) ?? 0,
         riskScore: (audit?.riskScore as number) ?? 0,
+        ton: (audit?.ton as SecurityScan['ton']) ?? undefined,
       } as SecurityScan;
     });
 

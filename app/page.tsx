@@ -6,6 +6,7 @@ import { Sidebar } from '@/components/shared/Sidebar';
 import { BottomTabBar } from '@/components/shared/BottomTabBar';
 import { PaywallModal } from '@/components/shared/PaywallModal';
 import { DesktopGate } from '@/components/shared/DesktopGate';
+import { OnboardingOverlay } from '@/components/shared/OnboardingOverlay';
 import { RadarScreen } from '@/components/screens/RadarScreen';
 import { WhalesScreen } from '@/components/screens/WhalesScreen';
 import { ScannerScreen } from '@/components/screens/ScannerScreen';
@@ -74,6 +75,7 @@ export default function Home() {
   const [tradeSettings, setTradeSettings] = useState<TradeSettings>(DEFAULT_TRADE_SETTINGS);
   const [watchlist, setWatchlist] = useState<WatchlistKey[]>([]);
   const [watchlistLimit, setWatchlistLimit] = useState<number | null>(5);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const isMiniApp =
     typeof window !== 'undefined' &&
@@ -172,6 +174,22 @@ export default function Home() {
           );
           setWatchlistLimit(data.limit ?? null);
         }
+      })
+      .catch(() => {});
+
+    authFetch('/api/onboarding/state', { method: 'GET' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data?.ok || !data.state) return;
+        const s = data.state as {
+          is_new: boolean;
+          step_completed: number;
+          completed_at: string | null;
+          skipped_at: string | null;
+        };
+        const eligible =
+          s.is_new || (!s.completed_at && !s.skipped_at && s.step_completed < 3);
+        if (eligible) setShowOnboarding(true);
       })
       .catch(() => {});
   }, []);
@@ -517,6 +535,17 @@ export default function Home() {
           lang={lang}
           isMiniApp={isMiniApp}
         />
+
+        {showOnboarding && (
+          <OnboardingOverlay
+            lang={lang}
+            onDismiss={() => setShowOnboarding(false)}
+            onStartScan={() => {
+              setActiveTab('scanner');
+              setShowOnboarding(false);
+            }}
+          />
+        )}
       </div>
       <DesktopGate lang={lang} />
     </TonConnectUIProvider>

@@ -45,6 +45,20 @@ export interface WhaleAlert {
   tokenAddress: string;
 }
 
+export type TonMintStatus = 'not_mintable' | 'mintable' | 'unknown';
+export type TonOwnerStatus = 'renounced' | 'active_admin' | 'unknown';
+
+export interface TonSafetyDetails {
+  score: number;
+  mintStatus: TonMintStatus;
+  ownerStatus: TonOwnerStatus;
+  lpTotalUsd: number;
+  lpDexList: string[];
+  nonSystemTopHolderPct: number;
+  jettonAgeDays: number | null;
+  verifiedByTonapi: boolean;
+}
+
 export interface SecurityScan {
   id: string;
   tokenSymbol: string;
@@ -64,6 +78,7 @@ export interface SecurityScan {
   totalHolders: number;
   topHolderPercent: number;
   riskScore: number;
+  ton?: TonSafetyDetails;
 }
 
 export interface AlertConfig {

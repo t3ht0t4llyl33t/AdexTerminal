@@ -3,6 +3,7 @@ import { authorizeCronRequest, lastSuccessAt, runSubtask } from '@/lib/cron-runn
 import {
   runAlertCheck,
   runDailyDigest,
+  runDailyMetricsSnapshot,
   runLightningBoost,
   runRadarRefresh,
   runRefreshTonPrice,
@@ -18,6 +19,8 @@ const REFRESH_TON_PRICE_INTERVAL_MS = 12 * 60 * 60 * 1000;
 const SUBSCRIPTION_CHECK_HOUR_UTC = 9;
 const DIGEST_HOUR_UTC = 12;
 const LIGHTNING_BOOST_INTERVAL_MS = 15 * 60 * 1000;
+const METRICS_SNAPSHOT_HOUR_UTC = 0;
+const METRICS_SNAPSHOT_MINUTE_UTC = 15;
 
 function sameUtcDay(a: Date, b: Date): boolean {
   return (
@@ -77,6 +80,16 @@ export async function GET(req: NextRequest) {
     ? await runSubtask({ jobName: 'lightning-boost', run: runLightningBoost })
     : { status: 'skipped' as const };
 
+  const metricsLast = await lastSuccessAt('daily-metrics-snapshot');
+  const metricsShouldFireHour =
+    now.getUTCHours() > METRICS_SNAPSHOT_HOUR_UTC ||
+    (now.getUTCHours() === METRICS_SNAPSHOT_HOUR_UTC && now.getUTCMinutes() >= METRICS_SNAPSHOT_MINUTE_UTC);
+  const metricsAlreadyRanToday = metricsLast ? sameUtcDay(metricsLast, now) : false;
+  const metricsDue = metricsShouldFireHour && !metricsAlreadyRanToday;
+  const metricsResult = metricsDue
+    ? await runSubtask({ jobName: 'daily-metrics-snapshot', run: runDailyMetricsSnapshot })
+    : { status: 'skipped' as const };
+
   await runSubtask({
     jobName: 'tick',
     run: async () => ({
@@ -88,6 +101,7 @@ export async function GET(req: NextRequest) {
         subscription_check: subResult.status,
         daily_digest: digestResult.status,
         lightning_boost: boostResult.status,
+        daily_metrics_snapshot: metricsResult.status,
       },
     }),
   });
@@ -102,6 +116,7 @@ export async function GET(req: NextRequest) {
       'subscription-check': subResult,
       'daily-digest': digestResult,
       'lightning-boost': boostResult,
+      'daily-metrics-snapshot': metricsResult,
     },
   });
 }

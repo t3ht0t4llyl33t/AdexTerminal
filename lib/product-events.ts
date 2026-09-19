@@ -17,7 +17,11 @@ type EventName =
   | 'digest_opened'
   | 'referral_shared'
   | 'referral_claimed'
-  | 'welcome_visited';
+  | 'welcome_visited'
+  | 'onboarding_shown'
+  | 'onboarding_step_shown'
+  | 'onboarding_skipped'
+  | 'onboarding_completed';
 
 export function trackEvent(
   event: EventName,

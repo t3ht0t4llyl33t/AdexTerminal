@@ -117,6 +117,35 @@ export type TranslationKey =
   | 'scanner.verdictCaution'
   | 'scanner.verdictDanger'
   | 'scanner.tonArchitecture'
+  | 'scanner.tonMintTitle'
+  | 'scanner.tonMintNotMintable'
+  | 'scanner.tonMintMintable'
+  | 'scanner.tonOwnerTitle'
+  | 'scanner.tonOwnerRenounced'
+  | 'scanner.tonOwnerActive'
+  | 'scanner.tonOwnerUnknown'
+  | 'scanner.tonLpTitle'
+  | 'scanner.tonLpNoPools'
+  | 'scanner.tonLpLow'
+  | 'scanner.tonLpHealthy'
+  | 'scanner.tonPoolsFound'
+  | 'scanner.tonLiquidityLabel'
+  | 'scanner.tonAgeLabel'
+  | 'scanner.tonAgeDays'
+  | 'scanner.tonAgeUnknown'
+  | 'scanner.tonVerifiedYes'
+  | 'scanner.tonVerifiedNo'
+  | 'scanner.tonNativeSubtitle'
+  | 'onboarding.slide1Title'
+  | 'onboarding.slide1Body'
+  | 'onboarding.slide2Title'
+  | 'onboarding.slide2Body'
+  | 'onboarding.slide3Title'
+  | 'onboarding.slide3Body'
+  | 'onboarding.skip'
+  | 'onboarding.next'
+  | 'onboarding.startScan'
+  | 'onboarding.progress'
   | 'profile.title'
   | 'profile.subtitle'
   | 'profile.alerts'
@@ -360,6 +389,35 @@ const en: TranslationDict = {
   'scanner.verdictCaution': 'Contract reads clean but risk pockets present • proceed sized, not stacked.',
   'scanner.verdictDanger': 'Contract reads hot • cluster signals or LP posture flag extreme risk. Rug-shaped setup — step aside.',
   'scanner.tonArchitecture': 'TON native check • LP handling lives inside the jetton contract, not on external lockers. Manual pool review recommended.',
+  'scanner.tonMintTitle': 'Mint Status',
+  'scanner.tonMintNotMintable': 'NOT MINTABLE — supply is fixed',
+  'scanner.tonMintMintable': 'MINTABLE — admin can inflate supply',
+  'scanner.tonOwnerTitle': 'Owner Status',
+  'scanner.tonOwnerRenounced': 'RENOUNCED — admin removed',
+  'scanner.tonOwnerActive': 'ACTIVE ADMIN — control retained',
+  'scanner.tonOwnerUnknown': 'UNKNOWN — admin data missing',
+  'scanner.tonLpTitle': 'LP Distribution',
+  'scanner.tonLpNoPools': 'NO POOLS FOUND on STON.fi / DeDust',
+  'scanner.tonLpLow': 'THIN LIQUIDITY — under $5k reserve',
+  'scanner.tonLpHealthy': 'LIVE ON {dexes}',
+  'scanner.tonPoolsFound': 'Pools',
+  'scanner.tonLiquidityLabel': 'Liquidity',
+  'scanner.tonAgeLabel': 'Jetton Age',
+  'scanner.tonAgeDays': '{days} days',
+  'scanner.tonAgeUnknown': 'unknown',
+  'scanner.tonVerifiedYes': 'Verified in TonAPI whitelist',
+  'scanner.tonVerifiedNo': 'Not in TonAPI whitelist',
+  'scanner.tonNativeSubtitle': 'TON native check via TonAPI + STON.fi + DeDust',
+  'onboarding.slide1Title': 'Radar catches spikes before DEXScreener',
+  'onboarding.slide1Body': 'Live view of new tokens on TON, BSC and BASE. See volume surges the moment they start — not five minutes late.',
+  'onboarding.slide2Title': 'Whales shows real $3K+ trades',
+  'onboarding.slide2Body': 'Anti-noise filter removes wash trading and bot activity. What you see is what real money is doing right now.',
+  'onboarding.slide3Title': 'Scanner audits a contract in 2 seconds',
+  'onboarding.slide3Body': 'Mint status, ownership, LP distribution, insider clusters — one score, plain English verdict, no PhD required.',
+  'onboarding.skip': 'Skip',
+  'onboarding.next': 'Next',
+  'onboarding.startScan': 'Start first scan',
+  'onboarding.progress': 'Step {step} of 3',
   'profile.title': 'Profile & Alerts',
   'profile.subtitle': 'Manage your wallet, alerts, and subscription',
   'profile.alerts': 'Alert Configurations',
@@ -610,6 +668,35 @@ const ru: TranslationDict = {
   'scanner.verdictCaution': 'Контракт читается чисто, но есть точки риска • заходим малым сайзом.',
   'scanner.verdictDanger': 'Контракт горячий • сигналы кластера или LP флагуют экстремальный риск. Форма скама — отходим в сторону.',
   'scanner.tonArchitecture': 'TON нативный чек • логика LP живёт в контракте jetton, не на внешних локерах. Рекомендуется ручная проверка пула.',
+  'scanner.tonMintTitle': 'Mint-статус',
+  'scanner.tonMintNotMintable': 'НЕЛЬЗЯ МИНТИТЬ — эмиссия зафиксирована',
+  'scanner.tonMintMintable': 'МОЖНО МИНТИТЬ — админ может раздуть supply',
+  'scanner.tonOwnerTitle': 'Статус админа',
+  'scanner.tonOwnerRenounced': 'ADMIN СНЯТ — контроль отозван',
+  'scanner.tonOwnerActive': 'АКТИВНЫЙ ADMIN — контроль сохранён',
+  'scanner.tonOwnerUnknown': 'НЕИЗВЕСТНО — нет данных о админе',
+  'scanner.tonLpTitle': 'Распределение LP',
+  'scanner.tonLpNoPools': 'ПУЛОВ НЕТ на STON.fi / DeDust',
+  'scanner.tonLpLow': 'ТОНКАЯ ЛИКВИДНОСТЬ — резерв меньше $5k',
+  'scanner.tonLpHealthy': 'ЛИСТИНГ НА {dexes}',
+  'scanner.tonPoolsFound': 'Пулов',
+  'scanner.tonLiquidityLabel': 'Ликвидность',
+  'scanner.tonAgeLabel': 'Возраст jetton',
+  'scanner.tonAgeDays': '{days} дн.',
+  'scanner.tonAgeUnknown': 'неизвестно',
+  'scanner.tonVerifiedYes': 'В whitelist TonAPI',
+  'scanner.tonVerifiedNo': 'Нет в whitelist TonAPI',
+  'scanner.tonNativeSubtitle': 'TON нативный аудит через TonAPI + STON.fi + DeDust',
+  'onboarding.slide1Title': 'Radar ловит всплески раньше DEXScreener',
+  'onboarding.slide1Body': 'Живой поток новых токенов TON, BSC и BASE. Всплеск объёма виден в момент, а не через пять минут.',
+  'onboarding.slide2Title': 'Whales показывает реальные сделки $3K+',
+  'onboarding.slide2Body': 'Анти-шум фильтр отсекает wash-trading и ботов. Здесь — только то, куда двигаются реальные деньги прямо сейчас.',
+  'onboarding.slide3Title': 'Scanner оценивает контракт за 2 секунды',
+  'onboarding.slide3Body': 'Mint, владелец, распределение ликвидности, инсайдер-кластеры — один балл и человеческий вердикт без криптоволшебства.',
+  'onboarding.skip': 'Пропустить',
+  'onboarding.next': 'Далее',
+  'onboarding.startScan': 'Начать первый скан',
+  'onboarding.progress': 'Шаг {step} из 3',
   'profile.title': 'Профиль и Алерты',
   'profile.subtitle': 'Управление кошельком,\nалертами и подпиской',
   'profile.alerts': 'Конфигурация Алертов',

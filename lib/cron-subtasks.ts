@@ -598,3 +598,179 @@ export async function runLightningBoost(): Promise<SubtaskOutcome> {
   return { summary: { checked: candidates.length, granted } };
 }
 
+/* ---------- daily-metrics-snapshot ---------- */
+
+function utcDayBounds(day: Date): { startIso: string; endIso: string; dateStr: string } {
+  const start = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), 0, 0, 0));
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  const dateStr = start.toISOString().slice(0, 10);
+  return { startIso: start.toISOString(), endIso: end.toISOString(), dateStr };
+}
+
+async function countUniqueUsersInWindow(startIso: string, endIso: string): Promise<number> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('session_audit_log')
+    .select('telegram_user_id, last_seen_at, first_seen_at')
+    .or(`last_seen_at.gte.${startIso},first_seen_at.gte.${startIso}`)
+    .lt('first_seen_at', endIso);
+  if (error) throw new Error(`session_audit_log query failed: ${error.message}`);
+  const active = new Set<string>();
+  const winStart = new Date(startIso).getTime();
+  const winEnd = new Date(endIso).getTime();
+  for (const row of (data as Array<{ telegram_user_id: string; last_seen_at: string; first_seen_at: string }> | null) ?? []) {
+    const first = new Date(row.first_seen_at).getTime();
+    const last = new Date(row.last_seen_at).getTime();
+    if (last >= winStart && first < winEnd) active.add(row.telegram_user_id);
+  }
+  return active.size;
+}
+
+export interface DailyMetricsRow {
+  metric_date: string;
+  dau: number;
+  new_users: number;
+  scans_total: number;
+  scans_ton: number;
+  scans_evm: number;
+  scans_bsc: number;
+  scans_base: number;
+  scans_other: number;
+  dangerous_hits: number;
+  ton_cache_hits: number;
+  pro_active: number;
+  whale_alerts_shown: number;
+  whales_flagged: number;
+  scam_flags_new: number;
+  active_users_7d: number;
+  tokens_indexed: number;
+  payout_amount_usd: number;
+  raw_summary: null;
+  captured_at: string;
+}
+
+export async function computeDailyMetricsForDate(day: Date): Promise<DailyMetricsRow> {
+  const supabase = getSupabase();
+  const { startIso, endIso, dateStr } = utcDayBounds(day);
+
+  const dau = await countUniqueUsersInWindow(startIso, endIso);
+  const weekStartIso = new Date(new Date(endIso).getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const active7d = await countUniqueUsersInWindow(weekStartIso, endIso);
+
+  const { count: newUsers, error: newErr } = await supabase
+    .from('session_audit_log')
+    .select('telegram_user_id', { count: 'exact', head: true })
+    .gte('first_seen_at', startIso)
+    .lt('first_seen_at', endIso);
+  if (newErr) throw new Error(`new_users query failed: ${newErr.message}`);
+
+  const { data: scans, error: scansErr } = await supabase
+    .from('scanner_audit_logs')
+    .select('network, apex_ai_verdict')
+    .gte('created_at', startIso)
+    .lt('created_at', endIso);
+  if (scansErr) throw new Error(`scanner_audit_logs query failed: ${scansErr.message}`);
+
+  let scansTotal = 0;
+  let scansTon = 0;
+  let scansBsc = 0;
+  let scansBase = 0;
+  let scansOther = 0;
+  let dangerousHits = 0;
+  for (const s of (scans as Array<{ network: string | null; apex_ai_verdict: string | null }> | null) ?? []) {
+    scansTotal++;
+    const net = (s.network || '').toUpperCase();
+    if (net === 'TON') scansTon++;
+    else if (net === 'BSC') scansBsc++;
+    else if (net === 'BASE') scansBase++;
+    else scansOther++;
+    if ((s.apex_ai_verdict || '').toLowerCase() === 'danger') dangerousHits++;
+  }
+  const scansEvm = scansBsc + scansBase + scansOther;
+
+  const { count: tonCacheHits, error: cacheErr } = await supabase
+    .from('ton_safety_cache')
+    .select('master_address', { count: 'exact', head: true })
+    .gte('updated_at', startIso)
+    .lt('updated_at', endIso);
+  if (cacheErr) throw new Error(`ton_safety_cache query failed: ${cacheErr.message}`);
+
+  const { count: proActive, error: proErr } = await supabase
+    .from('user_subscriptions')
+    .select('telegram_user_id', { count: 'exact', head: true })
+    .eq('tier', 'pro')
+    .gte('pro_expiration_date', endIso);
+  if (proErr) throw new Error(`user_subscriptions query failed: ${proErr.message}`);
+
+  const { count: whaleAlerts, error: whaleErr } = await supabase
+    .from('product_events')
+    .select('id', { count: 'exact', head: true })
+    .in('event_name', ['whale_alert_shown', 'whale_shown', 'whales_shown'])
+    .gte('created_at', startIso)
+    .lt('created_at', endIso);
+  if (whaleErr) throw new Error(`product_events (whale) query failed: ${whaleErr.message}`);
+
+  const { count: scamFlagsNew, error: scamErr } = await supabase
+    .from('contract_blacklist')
+    .select('id', { count: 'exact', head: true })
+    .gte('created_at', startIso)
+    .lt('created_at', endIso);
+  if (scamErr) throw new Error(`contract_blacklist query failed: ${scamErr.message}`);
+
+  const { count: tokensIndexed, error: tokensErr } = await supabase
+    .from('token_metadata')
+    .select('id', { count: 'exact', head: true })
+    .lt('updated_at', endIso);
+  if (tokensErr) throw new Error(`token_metadata query failed: ${tokensErr.message}`);
+
+  const { data: payouts, error: payoutErr } = await supabase
+    .from('partner_pending_balances')
+    .select('amount_usd, status, updated_at')
+    .eq('status', 'paid')
+    .gte('updated_at', startIso)
+    .lt('updated_at', endIso);
+  if (payoutErr) throw new Error(`partner_pending_balances query failed: ${payoutErr.message}`);
+  let payoutUsd = 0;
+  for (const p of (payouts as Array<{ amount_usd: number | string | null }> | null) ?? []) {
+    const v = typeof p.amount_usd === 'number' ? p.amount_usd : Number(p.amount_usd ?? 0);
+    if (Number.isFinite(v)) payoutUsd += v;
+  }
+
+  return {
+    metric_date: dateStr,
+    dau,
+    new_users: newUsers ?? 0,
+    scans_total: scansTotal,
+    scans_ton: scansTon,
+    scans_evm: scansEvm,
+    scans_bsc: scansBsc,
+    scans_base: scansBase,
+    scans_other: scansOther,
+    dangerous_hits: dangerousHits,
+    ton_cache_hits: tonCacheHits ?? 0,
+    pro_active: proActive ?? 0,
+    whale_alerts_shown: whaleAlerts ?? 0,
+    whales_flagged: whaleAlerts ?? 0,
+    scam_flags_new: scamFlagsNew ?? 0,
+    active_users_7d: active7d,
+    tokens_indexed: tokensIndexed ?? 0,
+    payout_amount_usd: Math.round(payoutUsd * 100) / 100,
+    raw_summary: null,
+    captured_at: new Date().toISOString(),
+  };
+}
+
+export async function runDailyMetricsSnapshot(): Promise<SubtaskOutcome> {
+  const supabase = getSupabase();
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const row = await computeDailyMetricsForDate(yesterday);
+
+  const { error: upsertErr } = await supabase
+    .from('daily_metrics_snapshot')
+    .upsert(row, { onConflict: 'metric_date' });
+  if (upsertErr) throw new Error(`snapshot upsert failed: ${upsertErr.message}`);
+
+  return { summary: { ...row } as unknown as CronSummary };
+}
+
+
