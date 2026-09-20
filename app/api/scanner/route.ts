@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
 import { getSupabase } from '@/lib/supabase-server';
 import { cachedJson } from '@/lib/edge-cache';
-import { auditTonJetton } from '@/lib/ton-scanner';
+import { auditTonJetton, TonScanError, validateTonAddress } from '@/lib/ton-scanner';
 import type { SecurityScan, Network } from '@/lib/types';
 
 const GECKO_TERMINAL_BASE = 'https://api.geckoterminal.com/api/v2';
@@ -281,47 +281,43 @@ async function generateAudit(address: string): Promise<AuditResult> {
     }
   } else {
     const tonData = await auditTonJetton(address);
-    if (tonData) {
-      const detectedSymbol = tonData.tokenSymbol && tonData.tokenSymbol !== 'UNKNOWN'
-        ? tonData.tokenSymbol
-        : tokenSymbol;
-      const hasPools = tonData.details.lpDexList.length > 0;
-      const topPct = tonData.details.nonSystemTopHolderPct;
-      const concentratedNonSystem = tonData.filteredTopHolders.filter((h) => h.percent >= 5);
-      const devCluster =
-        tonData.details.mintStatus === 'mintable' ||
-        tonData.details.ownerStatus === 'active_admin' ||
-        concentratedNonSystem.length >= 3;
-      const devWalletCount = devCluster
-        ? Math.max(concentratedNonSystem.length, tonData.details.ownerStatus === 'active_admin' ? 1 : 0)
-        : 0;
+    const detectedSymbol = tonData.tokenSymbol && tonData.tokenSymbol !== 'UNKNOWN'
+      ? tonData.tokenSymbol
+      : tokenSymbol;
+    const hasPools = tonData.details.lpDexList.length > 0;
+    const topPct = tonData.details.nonSystemTopHolderPct;
+    const concentratedNonSystem = tonData.filteredTopHolders.filter((h) => h.percent >= 5);
+    const devCluster =
+      tonData.details.mintStatus === 'mintable' ||
+      tonData.details.ownerStatus === 'active_admin' ||
+      concentratedNonSystem.length >= 3;
+    const devWalletCount = devCluster
+      ? Math.max(concentratedNonSystem.length, tonData.details.ownerStatus === 'active_admin' ? 1 : 0)
+      : 0;
 
-      scan = {
-        id: `scan-${Date.now()}`,
-        tokenSymbol: detectedSymbol,
-        network,
-        address,
-        lpLocked: false,
-        lpLockedUntil: null,
-        lpLockPercent: 0,
-        devCluster,
-        devWalletCount,
-        honeypot: false,
-        buyTax: 0,
-        sellTax: 0,
-        contractVerified: tonData.details.verifiedByTonapi,
-        canRenounce: false,
-        ownerRenounced: tonData.details.ownerStatus === 'renounced',
-        totalHolders: tonData.totalHolders,
-        topHolderPercent: topPct,
-        riskScore: tonData.details.score,
-        ton: tonData.details,
-      };
-      if (!hasPools) {
-        scan.riskScore = Math.max(scan.riskScore, 70);
-      }
-    } else {
-      throw new Error('TON security API returned no data for this contract');
+    scan = {
+      id: `scan-${Date.now()}`,
+      tokenSymbol: detectedSymbol,
+      network,
+      address,
+      lpLocked: false,
+      lpLockedUntil: null,
+      lpLockPercent: 0,
+      devCluster,
+      devWalletCount,
+      honeypot: false,
+      buyTax: 0,
+      sellTax: 0,
+      contractVerified: tonData.details.verifiedByTonapi,
+      canRenounce: false,
+      ownerRenounced: tonData.details.ownerStatus === 'renounced',
+      totalHolders: tonData.totalHolders,
+      topHolderPercent: topPct,
+      riskScore: tonData.details.score,
+      ton: tonData.details,
+    };
+    if (!hasPools) {
+      scan.riskScore = Math.max(scan.riskScore, 70);
     }
   }
 
@@ -346,13 +342,17 @@ function isDangerous(scan: SecurityScan): boolean {
   return scan.honeypot || scan.riskScore >= 60;
 }
 
-async function loadFromDbCache(address: string): Promise<AuditResult | null> {
+function normalizeCacheKey(address: string, network: Network): string {
+  return network === 'TON' ? address.trim() : address.trim().toLowerCase();
+}
+
+async function loadFromDbCache(address: string, network: Network): Promise<AuditResult | null> {
   try {
     const supabase = getSupabase();
     const { data } = await supabase
       .from('scan_cache')
       .select('scan_result, verdict_key, updated_at')
-      .eq('contract_address', address.toLowerCase())
+      .eq('contract_address', normalizeCacheKey(address, network))
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -362,6 +362,11 @@ async function loadFromDbCache(address: string): Promise<AuditResult | null> {
     if (age > DB_CACHE_TTL_MS) return null;
 
     const scan = data.scan_result as unknown as SecurityScan;
+
+    if (network === 'TON' && !scan.ton) {
+      return null;
+    }
+
     const verdictKey = data.verdict_key as AuditResult['verdictKey'];
     const devClusterAlertKey = scan.devCluster ? 'scanner.devClusterAlert' as const : null;
 
@@ -374,7 +379,7 @@ async function loadFromDbCache(address: string): Promise<AuditResult | null> {
 async function saveToDbCache(address: string, result: AuditResult): Promise<void> {
   try {
     const supabase = getSupabase();
-    const normalized = address.toLowerCase();
+    const normalized = normalizeCacheKey(address, result.scan.network);
     const dangerous = isDangerous(result.scan);
 
     await supabase
@@ -408,7 +413,8 @@ async function saveToDbCache(address: string, result: AuditResult): Promise<void
 
 async function getAuditResult(address: string): Promise<AuditResult> {
   const cache = getCache();
-  const normalized = address.toLowerCase();
+  const network = detectNetwork(address);
+  const normalized = normalizeCacheKey(address, network);
 
   // 1. In-memory cache (5 min TTL)
   const cached = cache.get(normalized);
@@ -425,7 +431,7 @@ async function getAuditResult(address: string): Promise<AuditResult> {
 
   const promise = (async () => {
     // 3. DB cache (3h TTL) — checked before calling external APIs
-    const dbResult = await loadFromDbCache(address);
+    const dbResult = await loadFromDbCache(address, network);
     if (dbResult) {
       cache.set(normalized, { result: dbResult, expiresAt: Date.now() + TTL_MS });
       pending.delete(normalized);
@@ -537,6 +543,7 @@ export async function POST(req: NextRequest) {
   const authUser = await requireTelegramUser(req);
   if (!authUser) return unauthorized();
 
+  let trimmedAddress = '';
   try {
     const body = await req.json();
     const { address, referralToken, referrerTgId } = body as {
@@ -550,6 +557,21 @@ export async function POST(req: NextRequest) {
         { error: 'Invalid contract address' },
         { status: 400 },
       );
+    }
+
+    trimmedAddress = address.trim();
+    const detectedNetwork = detectNetwork(trimmedAddress);
+    if (detectedNetwork === 'TON') {
+      const tonValidation = validateTonAddress(trimmedAddress);
+      if (!tonValidation.ok) {
+        return NextResponse.json(
+          {
+            error: 'Неверный TON-адрес. Ожидается 48-символьный дружелюбный адрес, начинающийся с EQ, UQ, kQ или 0Q (регистр важен).',
+            reason: tonValidation.reason,
+          },
+          { status: 400 },
+        );
+      }
     }
 
     const tgUser = authUser.telegramUserId;
@@ -611,7 +633,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const result = await getAuditResult(address.trim());
+    const result = await getAuditResult(trimmedAddress);
 
     await incrementScanCount(tgUser);
 
@@ -619,7 +641,7 @@ export async function POST(req: NextRequest) {
       const supabase = getSupabase();
       await supabase.from('scanner_audit_logs').insert({
         telegram_user_id: tgUser,
-        contract_address: address.trim().toLowerCase(),
+        contract_address: normalizeCacheKey(trimmedAddress, result.scan.network),
         network: result.scan.network,
         audit_result: result.scan as unknown as Record<string, unknown>,
         apex_ai_verdict: result.verdictKey,
@@ -630,11 +652,29 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ...result,
-      cached: getCache().has(address.trim().toLowerCase()),
+      cached: getCache().has(normalizeCacheKey(trimmedAddress, result.scan.network)),
       remainingScans: DAILY_FREE_LIMIT + limitCheck.bonusScans - limitCheck.count - 1,
       totalAllowed: DAILY_FREE_LIMIT + limitCheck.bonusScans,
     });
   } catch (err) {
+    if (err instanceof TonScanError) {
+      try {
+        const supabase = getSupabase();
+        await supabase.from('scanner_audit_logs').insert({
+          telegram_user_id: authUser.telegramUserId,
+          contract_address: trimmedAddress.slice(0, 128),
+          network: 'TON',
+          audit_result: { error: err.message, code: err.code } as unknown as Record<string, unknown>,
+          apex_ai_verdict: 'scanner.verdictCaution',
+        });
+      } catch {
+        // best-effort
+      }
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status: err.code === 'tonapi_rate_limited' ? 429 : 502 },
+      );
+    }
     const message = err instanceof Error && err.message
       ? err.message
       : 'Scan failed. Please retry.';

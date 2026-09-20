@@ -14,8 +14,8 @@ export const DEFAULT_TRADE_SETTINGS: TradeSettings = {
 };
 
 export const TON_SERVICES: { id: TonService; label: string; url: string }[] = [
-  { id: 'dedust', label: 'DeDust TWA', url: 'https://t.me/dedustBot' },
-  { id: 'stonfi', label: 'STON.fi TWA', url: 'https://t.me/STONfi_bot' },
+  { id: 'dedust', label: 'DeDust', url: 'https://dedust.io/' },
+  { id: 'stonfi', label: 'STON.fi', url: 'https://app.ston.fi/' },
 ];
 
 export const EVM_SERVICES: { id: EvmService; label: string; url: string }[] = [
@@ -31,19 +31,21 @@ export function buildTradeLink(
   tokenAddress: string,
   settings: TradeSettings,
 ): string {
+  const addr = encodeURIComponent(tokenAddress);
+
   if (network === 'TON') {
     if (settings.ton_service === 'stonfi') {
-      return `https://t.me/STONfi_bot?start=swap_${tokenAddress}`;
+      return `https://app.ston.fi/swap?chartVisible=false&ft=TON&tt=${addr}`;
     }
-    return `https://t.me/dedustBot?start=swap_${tokenAddress}`;
+    return `https://dedust.io/swap/TON/${addr}`;
   }
 
   // EVM chains (BSC, BASE)
   const evm = settings.evm_service;
   if (evm === 'maestro') {
-    return `https://t.me/MaestroSniperBot?start=r-${MAESTRO_REFERRAL_ID}-${tokenAddress}`;
+    return `https://t.me/MaestroSniperBot?start=${addr}-${MAESTRO_REFERRAL_ID}`;
   }
-  return `https://t.me/BananaGun_bot?start=${BANANA_REFERRAL_ID}-evm_${tokenAddress}`;
+  return `https://t.me/BananaGun_bot?start=snipe_${addr}_${BANANA_REFERRAL_ID}`;
 }
 
 export function getServiceUrl(settings: TradeSettings, isEvm: boolean): string {

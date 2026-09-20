@@ -165,9 +165,19 @@ export function ProfileScreen({
   const openServiceUrl = (isEvm: boolean) => {
     const url = getServiceUrl(tradeSettings, isEvm);
     if (typeof window !== 'undefined') {
-      const tg = (window as unknown as { Telegram?: { WebApp?: { openTelegramLink?: (url: string) => void } } }).Telegram;
-      if (tg?.WebApp?.openTelegramLink) {
+      const tg = (window as unknown as {
+        Telegram?: {
+          WebApp?: {
+            openTelegramLink?: (url: string) => void;
+            openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
+          };
+        };
+      }).Telegram;
+      const isTelegramLink = url.startsWith('https://t.me/') || url.startsWith('tg://');
+      if (isTelegramLink && tg?.WebApp?.openTelegramLink) {
         tg.WebApp.openTelegramLink(url);
+      } else if (!isTelegramLink && tg?.WebApp?.openLink) {
+        tg.WebApp.openLink(url);
       } else {
         window.open(url, '_blank');
       }

@@ -78,6 +78,18 @@ export function RadarScreen({
     }
   };
 
+  const marketPulseTokens = useMemo(() => {
+    const result = tokens.filter((t) => {
+      if (!networks.includes(t.network)) return false;
+      if (isPro) {
+        if (t.volumeSpike15m < spikeThreshold) return false;
+        if (t.liquidity < minLiquidity) return false;
+      }
+      return true;
+    });
+    return result.slice(0, 50);
+  }, [tokens, networks, isPro, spikeThreshold, minLiquidity]);
+
   const filtered = useMemo(() => {
     const result = tokens.filter((t) => {
       if (!networks.includes(t.network)) return false;
@@ -128,17 +140,17 @@ export function RadarScreen({
       <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
         <div className="rounded-lg border border-fuchsia-400/35 bg-[#071126]/80 px-2 py-2 sm:px-3 sm:py-2.5 shadow-[0_0_14px_rgba(192,38,211,0.12)] text-center">
           <div className="text-[8px] sm:text-[10px] uppercase tracking-wider text-fuchsia-200/60 truncate">{lang === 'RU' ? 'Импульс' : 'Market pulse'}</div>
-          <div className="mt-0.5 text-sm sm:text-base font-mono font-bold text-fuchsia-200 truncate">{formatUsd(filtered.reduce((sum, token) => sum + token.volume24h, 0))}</div>
+          <div className="mt-0.5 text-sm sm:text-base font-mono font-bold text-fuchsia-200 truncate">{formatUsd(marketPulseTokens.reduce((sum, token) => sum + token.volume24h, 0))}</div>
           <div className="text-[8px] sm:text-[10px] text-fuchsia-200/50 mt-0.5 truncate">▲ {lang === 'RU' ? 'покупки' : 'buy volume'}</div>
         </div>
         <div className="rounded-lg border border-fuchsia-400/35 bg-[#071126]/80 px-2 py-2 sm:px-3 sm:py-2.5 shadow-[0_0_14px_rgba(192,38,211,0.12)] text-center">
           <div className="text-[8px] sm:text-[10px] uppercase tracking-wider text-fuchsia-200/60 truncate">{lang === 'RU' ? 'Пары' : 'Active pairs'}</div>
-          <div className="mt-0.5 text-sm sm:text-base font-mono font-bold text-white">{filtered.length}</div>
+          <div className="mt-0.5 text-sm sm:text-base font-mono font-bold text-white">{marketPulseTokens.length}</div>
           <div className="text-[8px] sm:text-[10px] text-fuchsia-200/50 mt-0.5 truncate">{lang === 'RU' ? 'real-time' : 'real-time'}</div>
         </div>
         <div className="rounded-lg border border-fuchsia-400/35 bg-[#071126]/80 px-2 py-2 sm:px-3 sm:py-2.5 shadow-[0_0_14px_rgba(192,38,211,0.12)] text-center">
           <div className="text-[8px] sm:text-[10px] uppercase tracking-wider text-fuchsia-200/60 truncate">{lang === 'RU' ? 'Всплеск' : 'Peak spike'}</div>
-          <div className="mt-0.5 text-sm sm:text-base font-mono font-bold text-fuchsia-200 truncate">+{Math.max(...filtered.map((token) => token.volumeSpike15m), 0)}%</div>
+          <div className="mt-0.5 text-sm sm:text-base font-mono font-bold text-fuchsia-200 truncate">+{Math.max(...marketPulseTokens.map((token) => token.volumeSpike15m), 0)}%</div>
           <div className="text-[8px] sm:text-[10px] text-fuchsia-200/50 mt-0.5 truncate">{lang === 'RU' ? '15 мин' : '15 min'}</div>
         </div>
       </div>

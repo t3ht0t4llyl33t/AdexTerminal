@@ -6,6 +6,27 @@ const GECKO_TERMINAL_BASE = 'https://api.geckoterminal.com/api/v2';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const SYSTEM_CONTRACTS_REFRESH_MS = 30 * 60 * 1000;
 
+const TON_FRIENDLY_RE = /^(EQ|UQ|kQ|0Q)[A-Za-z0-9_-]{46}$/;
+const TON_RAW_RE = /^-?\d{1,3}:[0-9a-fA-F]{64}$/;
+
+export class TonScanError extends Error {
+  code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+    this.name = 'TonScanError';
+  }
+}
+
+export function validateTonAddress(address: string): { ok: boolean; reason?: string } {
+  const trimmed = address.trim();
+  if (!trimmed) return { ok: false, reason: 'empty_address' };
+  if (TON_FRIENDLY_RE.test(trimmed)) return { ok: true };
+  if (TON_RAW_RE.test(trimmed)) return { ok: true };
+  if (trimmed.length !== 48) return { ok: false, reason: 'ton_address_wrong_length' };
+  return { ok: false, reason: 'ton_address_invalid_format' };
+}
+
 const RENOUNCED_TON_ADMINS = new Set<string>([
   '',
   '0:0000000000000000000000000000000000000000000000000000000000000000',
@@ -62,7 +83,12 @@ async function fetchJettonMasterRaw(address: string): Promise<TonJettonRaw | nul
       headers: tonApiHeaders(),
       signal: AbortSignal.timeout(6000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      if (res.status === 404) throw new TonScanError('not_a_jetton', 'TonAPI: адрес не является jetton-контрактом (404)');
+      if (res.status === 401) throw new TonScanError('tonapi_unauthorized', 'TonAPI: неверный или отсутствующий TONAPI_KEY (401)');
+      if (res.status === 429) throw new TonScanError('tonapi_rate_limited', 'TonAPI: лимит частоты превышен (429). Добавьте/обновите TONAPI_KEY.');
+      throw new TonScanError('tonapi_http_error', `TonAPI ответил HTTP ${res.status}`);
+    }
     const json = await res.json();
     const admin = (json?.admin ?? json?.admin_address ?? json?.metadata?.admin_address ?? null) as
       | string
@@ -83,8 +109,12 @@ async function fetchJettonMasterRaw(address: string): Promise<TonJettonRaw | nul
       createdAtMs: null,
       symbol,
     };
-  } catch {
-    return null;
+  } catch (err) {
+    if (err instanceof TonScanError) throw err;
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new TonScanError('tonapi_timeout', 'TonAPI не ответил за 6 секунд');
+    }
+    throw new TonScanError('tonapi_network', `TonAPI недоступен: ${err instanceof Error ? err.message : 'unknown'}`);
   }
 }
 
@@ -251,7 +281,12 @@ async function saveToCache(address: string, out: TonScannerOutput): Promise<void
   }
 }
 
-export async function auditTonJetton(address: string): Promise<TonScannerOutput | null> {
+export async function auditTonJetton(address: string): Promise<TonScannerOutput> {
+  const validation = validateTonAddress(address);
+  if (!validation.ok) {
+    throw new TonScanError(validation.reason ?? 'ton_address_invalid', 'Неверный формат TON-адреса. Ожидается 48-символьный дружелюбный адрес (EQ.../UQ...) или raw 0:<64hex>.');
+  }
+
   const cached = await loadFromCache(address);
   if (cached) return cached;
 
@@ -262,7 +297,9 @@ export async function auditTonJetton(address: string): Promise<TonScannerOutput 
     loadSystemContracts(),
   ]);
 
-  if (!master) return null;
+  if (!master) {
+    throw new TonScanError('tonapi_no_master', 'TonAPI не вернул данные по этому jetton-контракту');
+  }
 
   const filteredTopHolders = holders.filter((h) => !systemContracts.has(h.address));
   const nonSystemTop3Sum = filteredTopHolders
