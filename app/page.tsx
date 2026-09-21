@@ -505,6 +505,7 @@ export default function Home() {
                   onToggleAlert={handleToggleAlert}
                   isPro={isPro}
                   onUpgrade={handleUpgrade}
+                  onTradeSettingsChange={setTradeSettings}
                 />
               )}
               {activeTab === 'partners' && (

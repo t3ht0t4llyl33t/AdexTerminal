@@ -32,6 +32,7 @@ import {
   TON_SERVICES,
   EVM_SERVICES,
   getServiceUrl,
+  getServiceBotUrl,
   type TradeSettings,
   type TonService,
   type EvmService,
@@ -47,6 +48,7 @@ interface ProfileScreenProps {
   onToggleAlert: (id: string) => void;
   isPro: boolean;
   onUpgrade: () => void;
+  onTradeSettingsChange?: (settings: TradeSettings) => void;
 }
 
 const MAX_ALERTS = 2;
@@ -64,6 +66,7 @@ export function ProfileScreen({
   onToggleAlert,
   isPro,
   onUpgrade,
+  onTradeSettingsChange,
 }: ProfileScreenProps) {
   const [tonConnectUI] = useTonConnectUI();
   const [walletConnected, setWalletConnected] = useState(false);
@@ -152,6 +155,7 @@ export function ProfileScreen({
 
   const saveTradeSettings = useCallback((newSettings: TradeSettings) => {
     setTradeSettings(newSettings);
+    onTradeSettingsChange?.(newSettings);
     authFetch('/api/trade-settings', {
       method: 'POST',
       body: JSON.stringify({
@@ -160,10 +164,10 @@ export function ProfileScreen({
         evm_service: newSettings.evm_service,
       }),
     }).catch(() => {});
-  }, []);
+  }, [onTradeSettingsChange]);
 
   const openServiceUrl = (isEvm: boolean) => {
-    const url = getServiceUrl(tradeSettings, isEvm);
+    const url = getServiceBotUrl(tradeSettings, isEvm);
     if (typeof window !== 'undefined') {
       const tg = (window as unknown as {
         Telegram?: {

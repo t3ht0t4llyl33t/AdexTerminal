@@ -111,25 +111,41 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
         }),
       });
 
-      const json = await res.json();
+      let json: Record<string, unknown> | null = null;
+      try {
+        json = await res.json();
+      } catch {
+        json = null;
+      }
+
+      if (!json) {
+        setError(translate(lang, 'common.error'));
+        setScanning(false);
+        return;
+      }
 
       if (json.locked) {
-        setLimitMessage(json.message || translate(lang, 'scanner.dailyLimitExhausted'));
+        setLimitMessage((json.message as string) || translate(lang, 'scanner.dailyLimitExhausted'));
         setLimitModal(true);
         setScanning(false);
         return;
       }
 
       if (json.bonusGranted !== undefined) {
-        setBonusMessage(json.message || null);
+        setBonusMessage((json.message as string) || null);
       }
 
       if (json.scan) {
-        setAudit(json as AuditResponse);
-        trackEvent('scan_completed', { risk: json.scan?.riskLevel, network: json.scan?.network });
+        setAudit(json as unknown as AuditResponse);
+        trackEvent('scan_completed', {
+          risk: (json.scan as { riskLevel?: string })?.riskLevel ?? 'unknown',
+          network: (json.scan as { network?: string })?.network ?? 'unknown',
+        });
         refreshHistory();
       } else if (json.error) {
-        setError(json.error);
+        setError(String(json.error));
+      } else if (!res.ok) {
+        setError(translate(lang, 'common.error'));
       }
     } catch {
       setError(translate(lang, 'common.error'));
@@ -167,6 +183,33 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
 
   const displayScan = audit?.scan;
   const hasDevCluster = displayScan?.devCluster ?? false;
+  const devSeverity: 'safe' | 'warning' | 'danger' =
+    displayScan?.devClusterSeverity ?? 'safe';
+  const devColors = devSeverity === 'danger'
+    ? {
+        text: 'text-red-300',
+        textMuted: 'text-red-300/60',
+        border: 'border-red-400/40',
+        borderSoft: 'border-red-400/30',
+        bg: 'bg-red-400/10',
+        icon: 'text-red-400',
+        lineFrom: 'from-red-400/60',
+        lineTo: 'to-red-400/20',
+        shadow: 'shadow-[0_0_22px_rgba(239,68,68,0.1)]',
+        nodeShadow: 'shadow-[0_0_14px_rgba(239,68,68,0.25)]',
+      }
+    : {
+        text: 'text-amber-300',
+        textMuted: 'text-amber-300/60',
+        border: 'border-amber-400/40',
+        borderSoft: 'border-amber-400/30',
+        bg: 'bg-amber-400/10',
+        icon: 'text-amber-400',
+        lineFrom: 'from-amber-400/60',
+        lineTo: 'to-amber-400/20',
+        shadow: 'shadow-[0_0_22px_rgba(251,191,36,0.1)]',
+        nodeShadow: 'shadow-[0_0_14px_rgba(251,191,36,0.25)]',
+      };
   const insiderWeight = audit?.insiderWeight ?? 0;
 
   const capabilities = [
@@ -785,15 +828,15 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
 
           {/* Dev Cluster Visualizer */}
           {hasDevCluster && (
-            <div className={cn('p-4', cardCls, 'shadow-[0_0_22px_rgba(239,68,68,0.1)]')}>
+            <div className={cn('p-4', cardCls, devColors.shadow)}>
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 rounded-xl bg-red-400/10 border border-red-400/30 flex items-center justify-center">
-                  <Link2 className="w-4 h-4 text-red-400" />
+                <div className={cn('w-8 h-8 rounded-xl flex items-center justify-center', devColors.bg, devColors.borderSoft, 'border')}>
+                  <Link2 className={cn('w-4 h-4', devColors.icon)} />
                 </div>
-                <span className="text-xs font-mono text-red-300 uppercase tracking-wider font-bold">
+                <span className={cn('text-xs font-mono uppercase tracking-wider font-bold', devColors.text)}>
                   {translate(lang, 'scanner.devClusterTitle')}
                 </span>
-                <span className="ml-auto text-[10px] font-mono text-red-300/60">
+                <span className={cn('ml-auto text-[10px] font-mono', devColors.textMuted)}>
                   {displayScan.devWalletCount} {lang === 'RU' ? 'кошельков' : 'wallets'}
                 </span>
               </div>
@@ -802,7 +845,7 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
               <div className="flex flex-col items-center gap-2 py-3">
                 {/* Central deployer node */}
                 <div className="flex flex-col items-center">
-                  <div className="px-4 py-2 rounded-xl bg-red-400/10 border border-red-400/40 text-red-300 text-xs font-mono font-bold shadow-[0_0_14px_rgba(239,68,68,0.25)]">
+                  <div className={cn('px-4 py-2 rounded-xl border text-xs font-mono font-bold', devColors.bg, devColors.border, devColors.text, devColors.nodeShadow)}>
                     {translate(lang, 'scanner.deployerWallet')}
                   </div>
                   <div className="text-[10px] font-mono text-white/30 mt-1.5 flex items-center gap-1">
@@ -814,7 +857,7 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
                 {/* Connecting lines — dynamic count */}
                 <div className="flex items-end justify-center gap-4 sm:gap-8 h-8" style={{ gap: `${Math.max(4, 40 / Math.max(displayScan.devWalletCount, 1))}px` }}>
                   {Array.from({ length: Math.min(displayScan.devWalletCount, 8) }).map((_, i) => (
-                    <div key={i} className="w-px h-7 bg-gradient-to-b from-red-400/60 to-red-400/20" />
+                    <div key={i} className={cn('w-px h-7 bg-gradient-to-b', devColors.lineFrom, devColors.lineTo)} />
                   ))}
                 </div>
 
@@ -835,10 +878,10 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
               </div>
 
               {/* Dev cluster alert box */}
-              <div className="mt-4 p-4 rounded-xl bg-red-400/10 border border-red-400/40 animate-pulse-glow">
+              <div className={cn('mt-4 p-4 rounded-xl border', devColors.bg, devColors.border, devSeverity === 'danger' ? 'animate-pulse-glow' : '')}>
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs font-mono text-red-300 leading-relaxed font-bold">
+                  <AlertTriangle className={cn('w-5 h-5 flex-shrink-0 mt-0.5', devColors.icon)} />
+                  <p className={cn('text-xs font-mono leading-relaxed font-bold', devColors.text)}>
                     {audit?.devClusterAlertKey
                       ? interpolate(translate(lang, audit.devClusterAlertKey), {
                           count: displayScan.devWalletCount,

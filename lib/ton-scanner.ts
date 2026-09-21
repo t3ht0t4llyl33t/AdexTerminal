@@ -290,16 +290,27 @@ export async function auditTonJetton(address: string): Promise<TonScannerOutput>
   const cached = await loadFromCache(address);
   if (cached) return cached;
 
-  const [master, holders, pools, systemContracts] = await Promise.all([
+  const [masterSettled, holdersSettled, poolsSettled, systemContractsSettled] = await Promise.allSettled([
     fetchJettonMasterRaw(address),
     fetchJettonHoldersRaw(address),
     fetchTonPools(address),
     loadSystemContracts(),
   ]);
 
-  if (!master) {
-    throw new TonScanError('tonapi_no_master', 'TonAPI не вернул данные по этому jetton-контракту');
+  if (
+    masterSettled.status === 'rejected' &&
+    masterSettled.reason instanceof TonScanError &&
+    masterSettled.reason.code === 'not_a_jetton'
+  ) {
+    throw masterSettled.reason;
   }
+
+  const master =
+    masterSettled.status === 'fulfilled' ? masterSettled.value : null;
+  const holders = holdersSettled.status === 'fulfilled' ? holdersSettled.value : [];
+  const pools = poolsSettled.status === 'fulfilled' ? poolsSettled.value : [];
+  const systemContracts =
+    systemContractsSettled.status === 'fulfilled' ? systemContractsSettled.value : new Set<string>();
 
   const filteredTopHolders = holders.filter((h) => !systemContracts.has(h.address));
   const nonSystemTop3Sum = filteredTopHolders
@@ -310,24 +321,34 @@ export async function auditTonJetton(address: string): Promise<TonScannerOutput>
   const lpTotalUsd = pools.reduce((acc, p) => acc + p.reserveUsd, 0);
   const lpDexList = Array.from(new Set(pools.map((p) => p.dex))).filter(Boolean);
 
-  const mintStatus: TonMintStatus = master.mintable ? 'mintable' : 'not_mintable';
-  const adminNorm = (master.adminAddress ?? '').trim();
-  const ownerActive = !!adminNorm && !RENOUNCED_TON_ADMINS.has(adminNorm);
-  const ownerStatus: TonOwnerStatus = adminNorm === ''
+  const mintStatus: TonMintStatus = master
+    ? master.mintable
+      ? 'mintable'
+      : 'not_mintable'
+    : 'unknown';
+  const adminNorm = (master?.adminAddress ?? '').trim();
+  const ownerActive = !!master && !!adminNorm && !RENOUNCED_TON_ADMINS.has(adminNorm);
+  const ownerStatus: TonOwnerStatus = !master
     ? 'unknown'
-    : ownerActive
-      ? 'active_admin'
-      : 'renounced';
+    : adminNorm === ''
+      ? 'unknown'
+      : ownerActive
+        ? 'active_admin'
+        : 'renounced';
 
-  const score = scoreFromSignals({
-    mintable: master.mintable,
-    ownerActive,
-    verified: master.verified,
-    lpTotalUsd,
-    poolCount: pools.length,
-    nonSystemTop3Sum,
-    jettonAgeDays: null,
-  });
+  const score = master
+    ? scoreFromSignals({
+        mintable: master.mintable,
+        ownerActive,
+        verified: master.verified,
+        lpTotalUsd,
+        poolCount: pools.length,
+        nonSystemTop3Sum,
+        jettonAgeDays: null,
+      })
+    : pools.length === 0
+      ? 55
+      : 35;
 
   const output: TonScannerOutput = {
     details: {
@@ -338,15 +359,15 @@ export async function auditTonJetton(address: string): Promise<TonScannerOutput>
       lpDexList,
       nonSystemTopHolderPct,
       jettonAgeDays: null,
-      verifiedByTonapi: master.verified,
+      verifiedByTonapi: master?.verified ?? false,
     },
-    tokenSymbol: master.symbol || 'UNKNOWN',
-    totalHolders: master.totalHolders,
+    tokenSymbol: master?.symbol || 'UNKNOWN',
+    totalHolders: master?.totalHolders ?? 0,
     filteredTopHolders,
-    adminAddress: master.adminAddress,
+    adminAddress: master?.adminAddress ?? null,
     cached: false,
   };
 
-  await saveToCache(address, output);
+  if (master) await saveToCache(address, output);
   return output;
 }

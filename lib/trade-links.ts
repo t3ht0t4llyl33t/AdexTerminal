@@ -13,18 +13,18 @@ export const DEFAULT_TRADE_SETTINGS: TradeSettings = {
   evm_service: 'banana',
 };
 
+const MAESTRO_REFERRAL_ID = '44678c3f';
+const BANANA_REFERRAL_ID = 'qa9zlCQ2';
+
 export const TON_SERVICES: { id: TonService; label: string; url: string }[] = [
   { id: 'dedust', label: 'DeDust', url: 'https://dedust.io/' },
   { id: 'stonfi', label: 'STON.fi', url: 'https://app.ston.fi/' },
 ];
 
 export const EVM_SERVICES: { id: EvmService; label: string; url: string }[] = [
-  { id: 'banana', label: 'Banana Gun Bot', url: 'https://t.me/BananaGun_bot' },
-  { id: 'maestro', label: 'Maestro Sniper Bot', url: 'https://t.me/MaestroSniperBot' },
+  { id: 'banana', label: 'Banana Gun Bot', url: `https://t.me/BananaGun_bot?start=${BANANA_REFERRAL_ID}` },
+  { id: 'maestro', label: 'Maestro Sniper Bot', url: `https://t.me/MaestroSniperBot?start=${MAESTRO_REFERRAL_ID}` },
 ];
-
-const MAESTRO_REFERRAL_ID = '44678c3f';
-const BANANA_REFERRAL_ID = 'qa9zlCQ2';
 
 export function buildTradeLink(
   network: Network,
@@ -45,12 +45,23 @@ export function buildTradeLink(
   if (evm === 'maestro') {
     return `https://t.me/MaestroSniperBot?start=${addr}-${MAESTRO_REFERRAL_ID}`;
   }
-  return `https://t.me/BananaGun_bot?start=snipe_${addr}_${BANANA_REFERRAL_ID}`;
+  return `https://t.me/BananaGun_bot?start=${addr}_${BANANA_REFERRAL_ID}`;
 }
 
 export function getServiceUrl(settings: TradeSettings, isEvm: boolean): string {
   if (isEvm) {
     return EVM_SERVICES.find((s) => s.id === settings.evm_service)?.url || EVM_SERVICES[0].url;
+  }
+  return TON_SERVICES.find((s) => s.id === settings.ton_service)?.url || TON_SERVICES[0].url;
+}
+
+export function getServiceBotUrl(settings: TradeSettings, isEvm: boolean): string {
+  if (isEvm) {
+    const evm = settings.evm_service;
+    if (evm === 'maestro') {
+      return `https://t.me/MaestroSniperBot?start=${MAESTRO_REFERRAL_ID}`;
+    }
+    return `https://t.me/BananaGun_bot?start=${BANANA_REFERRAL_ID}`;
   }
   return TON_SERVICES.find((s) => s.id === settings.ton_service)?.url || TON_SERVICES[0].url;
 }

@@ -28,6 +28,12 @@ interface AuditResult {
   insiderWeight: number;
 }
 
+function computeDevClusterSeverity(topHolderPercent: number): SecurityScan['devClusterSeverity'] {
+  if (topHolderPercent >= 5) return 'danger';
+  if (topHolderPercent >= 1) return 'warning';
+  return 'safe';
+}
+
 interface CacheEntry {
   result: AuditResult;
   expiresAt: number;
@@ -249,13 +255,18 @@ async function fetchTokenSymbol(address: string, network: Network): Promise<stri
 
 async function generateAudit(address: string): Promise<AuditResult> {
   const network = detectNetwork(address);
-  const tokenSymbol = await fetchTokenSymbol(address, network);
 
   let scan: SecurityScan;
 
   if (network !== 'TON') {
-    const goPlusData = await fetchGoPlusForEvm(address);
+    const [tokenSymbol, goPlusData] = await Promise.all([
+      fetchTokenSymbol(address, network),
+      fetchGoPlusForEvm(address),
+    ]);
     if (goPlusData) {
+      const topPct = goPlusData.topHolderPercent;
+      const devClusterSeverity = computeDevClusterSeverity(topPct);
+      const devCluster = devClusterSeverity !== 'safe';
       scan = {
         id: `scan-${Date.now()}`,
         tokenSymbol,
@@ -264,8 +275,9 @@ async function generateAudit(address: string): Promise<AuditResult> {
         lpLocked: goPlusData.lpLocked,
         lpLockedUntil: goPlusData.lpLockedUntil,
         lpLockPercent: goPlusData.lpLockPercent,
-        devCluster: goPlusData.devCluster,
-        devWalletCount: goPlusData.devWalletCount,
+        devCluster,
+        devClusterSeverity,
+        devWalletCount: devCluster ? Math.max(goPlusData.devWalletCount, 1) : 0,
         honeypot: goPlusData.isHoneypot,
         buyTax: goPlusData.buyTax,
         sellTax: goPlusData.sellTax,
@@ -273,27 +285,26 @@ async function generateAudit(address: string): Promise<AuditResult> {
         canRenounce: goPlusData.canRenounce,
         ownerRenounced: goPlusData.ownerRenounced,
         totalHolders: goPlusData.totalHolders,
-        topHolderPercent: goPlusData.topHolderPercent,
+        topHolderPercent: topPct,
         riskScore: goPlusData.riskScore,
       };
     } else {
       throw new Error('GoPlus security API returned no data for this EVM contract');
     }
   } else {
-    const tonData = await auditTonJetton(address);
+    const [tokenSymbol, tonData] = await Promise.all([
+      fetchTokenSymbol(address, network),
+      auditTonJetton(address),
+    ]);
     const detectedSymbol = tonData.tokenSymbol && tonData.tokenSymbol !== 'UNKNOWN'
       ? tonData.tokenSymbol
       : tokenSymbol;
     const hasPools = tonData.details.lpDexList.length > 0;
     const topPct = tonData.details.nonSystemTopHolderPct;
-    const concentratedNonSystem = tonData.filteredTopHolders.filter((h) => h.percent >= 5);
-    const devCluster =
-      tonData.details.mintStatus === 'mintable' ||
-      tonData.details.ownerStatus === 'active_admin' ||
-      concentratedNonSystem.length >= 3;
-    const devWalletCount = devCluster
-      ? Math.max(concentratedNonSystem.length, tonData.details.ownerStatus === 'active_admin' ? 1 : 0)
-      : 0;
+    const devClusterSeverity = computeDevClusterSeverity(topPct);
+    const devCluster = devClusterSeverity !== 'safe';
+    const concentratedNonSystem = tonData.filteredTopHolders.filter((h) => h.percent >= 1);
+    const devWalletCount = devCluster ? Math.max(concentratedNonSystem.length, 1) : 0;
 
     scan = {
       id: `scan-${Date.now()}`,
@@ -304,6 +315,7 @@ async function generateAudit(address: string): Promise<AuditResult> {
       lpLockedUntil: null,
       lpLockPercent: 0,
       devCluster,
+      devClusterSeverity,
       devWalletCount,
       honeypot: false,
       buyTax: 0,
@@ -332,7 +344,7 @@ async function generateAudit(address: string): Promise<AuditResult> {
     verdictKey = 'scanner.verdictSafe';
   }
 
-  const devClusterAlertKey = scan.devCluster ? 'scanner.devClusterAlert' as const : null;
+  const devClusterAlertKey = scan.devClusterSeverity === 'danger' ? 'scanner.devClusterAlert' as const : null;
   const insiderWeight = scan.topHolderPercent;
 
   return { scan, verdictKey, devClusterAlertKey, insiderWeight };
@@ -367,8 +379,14 @@ async function loadFromDbCache(address: string, network: Network): Promise<Audit
       return null;
     }
 
+    if (!scan.devClusterSeverity) {
+      scan.devClusterSeverity = computeDevClusterSeverity(scan.topHolderPercent ?? 0);
+      scan.devCluster = scan.devClusterSeverity !== 'safe';
+      if (!scan.devCluster) scan.devWalletCount = 0;
+    }
+
     const verdictKey = data.verdict_key as AuditResult['verdictKey'];
-    const devClusterAlertKey = scan.devCluster ? 'scanner.devClusterAlert' as const : null;
+    const devClusterAlertKey = scan.devClusterSeverity === 'danger' ? 'scanner.devClusterAlert' as const : null;
 
     return { scan, verdictKey, devClusterAlertKey, insiderWeight: scan.topHolderPercent };
   } catch {
@@ -720,6 +738,9 @@ export async function GET(req: NextRequest) {
         lpLockedUntil: (audit?.lpLockedUntil as string | null) ?? null,
         lpLockPercent: (audit?.lpLockPercent as number) ?? 0,
         devCluster: (audit?.devCluster as boolean) ?? false,
+        devClusterSeverity:
+          (audit?.devClusterSeverity as SecurityScan['devClusterSeverity']) ??
+          computeDevClusterSeverity((audit?.topHolderPercent as number) ?? 0),
         devWalletCount: (audit?.devWalletCount as number) ?? 0,
         honeypot: (audit?.honeypot as boolean) ?? false,
         buyTax: (audit?.buyTax as number) ?? 0,

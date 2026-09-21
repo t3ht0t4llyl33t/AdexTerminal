@@ -99,14 +99,16 @@ export function OnboardingOverlay({ lang, onDismiss, onStartScan }: OnboardingOv
         </button>
 
         <div className={`relative flex h-48 w-full items-center justify-center bg-gradient-to-b ${slide.accent}`}>
-          <Image
-            src={slide.illustration}
-            alt=""
-            width={140}
-            height={140}
-            className="object-contain drop-shadow-2xl"
-            priority
-          />
+          <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-2xl overflow-hidden border border-fuchsia-400/50 flex items-center justify-center shadow-[0_0_14px_rgba(192,38,211,0.25)] bg-gradient-to-br from-fuchsia-400/15 to-violet-500/10">
+            <Image
+              src={slide.illustration}
+              alt=""
+              width={140}
+              height={140}
+              className="object-contain drop-shadow-2xl"
+              priority
+            />
+          </div>
         </div>
 
         <div className="px-6 pt-5 pb-6 flex flex-col gap-4">

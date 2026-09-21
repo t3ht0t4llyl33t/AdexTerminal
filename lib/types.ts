@@ -68,6 +68,7 @@ export interface SecurityScan {
   lpLockedUntil: string | null;
   lpLockPercent: number;
   devCluster: boolean;
+  devClusterSeverity: 'safe' | 'warning' | 'danger';
   devWalletCount: number;
   honeypot: boolean;
   buyTax: number;
