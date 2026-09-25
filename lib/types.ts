@@ -105,8 +105,10 @@ export interface ReferralStats {
   activeReferrals: number;
   totalEarnings: number;
   pendingPayouts: number;
+  totalStars: number;
   referralCode: string;
   referralLink: string;
+  referralLinkFallback: string;
   tier: string;
   commissionRate: number;
   isPro: boolean;

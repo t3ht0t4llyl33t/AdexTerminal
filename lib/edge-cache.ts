@@ -4,7 +4,14 @@ export interface EdgeCacheOptions {
   sMaxAge: number;
   swr: number;
   staleReason?: string | null;
+  scope?: 'user' | 'public';
 }
+
+export const PUBLIC_READ_CACHE: EdgeCacheOptions = {
+  sMaxAge: 60,
+  swr: 300,
+  scope: 'public',
+};
 
 function stableHash(input: string): string {
   let h1 = 0xdeadbeef ^ 0;
@@ -28,17 +35,21 @@ export function computeEtag(payload: unknown): string {
 }
 
 function buildHeaders(etag: string, opts: EdgeCacheOptions, cacheSource: string): HeadersInit {
-  const cache = opts.staleReason
-    ? 'public, s-maxage=5, stale-while-revalidate=30'
-    : `public, s-maxage=${opts.sMaxAge}, stale-while-revalidate=${opts.swr}`;
+  const isUser = opts.scope === 'user';
+  const cache = isUser
+    ? 'private, no-store'
+    : opts.staleReason
+      ? 'public, s-maxage=5, stale-while-revalidate=30'
+      : `public, s-maxage=${opts.sMaxAge}, stale-while-revalidate=${opts.swr}`;
   const headers: Record<string, string> = {
     'Cache-Control': cache,
-    'CDN-Cache-Control': cache,
+    'CDN-Cache-Control': isUser ? 'no-store' : cache,
     'Vary': 'Accept-Encoding',
     'ETag': etag,
     'X-Cache-Source': cacheSource,
+    'Age': '0',
   };
-  if (opts.staleReason) {
+  if (opts.staleReason && !isUser) {
     headers['X-Stale-Reason'] = opts.staleReason;
   }
   return headers;

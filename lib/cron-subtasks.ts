@@ -1,6 +1,8 @@
 import { getSupabase } from '@/lib/supabase-server';
 import type { CronSummary } from '@/lib/cron-runner';
 import { runRadarRefreshOnce } from '@/selectors/apiConfig';
+import { fetchWithBackoff } from '@/lib/fetch-backoff';
+import { cachedFetchJson } from '@/lib/cached-fetch';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_SUPPORT_BOT_TOKEN || '';
 const COINGECKO_URL =
@@ -23,12 +25,13 @@ interface RateFeed {
 
 async function fetchTonUsd(): Promise<RateFeed | null> {
   try {
-    const res = await fetch(COINGECKO_URL, {
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) return null;
-    const json = (await res.json()) as Record<string, { usd?: number }>;
+    const json = await cachedFetchJson<Record<string, { usd?: number }>>(
+      'coingecko:ton_usd',
+      COINGECKO_URL,
+      60_000,
+      { timeoutMs: 10_000, headers: { Accept: 'application/json' } },
+    );
+    if (!json) return null;
     const rate = json['the-open-network']?.usd;
     if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) return null;
     return { rate, source: 'coingecko' };
@@ -771,6 +774,32 @@ export async function runDailyMetricsSnapshot(): Promise<SubtaskOutcome> {
   if (upsertErr) throw new Error(`snapshot upsert failed: ${upsertErr.message}`);
 
   return { summary: { ...row } as unknown as CronSummary };
+}
+
+/* ---------- data-retention-cleanup ---------- */
+
+export async function runDataRetentionCleanup(): Promise<SubtaskOutcome> {
+  const supabase = getSupabase();
+
+  const { error: cronErr } = await supabase
+    .from('cron_runs')
+    .delete()
+    .lt('started_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+  if (cronErr) throw new Error(`cron_runs cleanup failed: ${cronErr.message}`);
+
+  const { error: eventsErr } = await supabase
+    .from('product_events')
+    .delete()
+    .lt('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+  if (eventsErr) throw new Error(`product_events cleanup failed: ${eventsErr.message}`);
+
+  const { error: sessionErr } = await supabase
+    .from('session_audit_log')
+    .delete()
+    .lt('last_seen_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
+  if (sessionErr) throw new Error(`session_audit_log cleanup failed: ${sessionErr.message}`);
+
+  return { summary: { pruned: true } };
 }
 
 

@@ -1,6 +1,8 @@
 import type { TokenRow, WhaleAlert, SecurityScan } from '@/lib/types';
 import { getSupabase } from '@/lib/supabase-server';
 import { filterWhaleTrades, type RawTrade } from '@/lib/whale-filters';
+import { fetchWithBackoff } from '@/lib/fetch-backoff';
+import { cachedFetchJson } from '@/lib/cached-fetch';
 
 export const GECKO_TERMINAL_BASE = 'https://api.geckoterminal.com/api/v2';
 export const POLL_INTERVAL_MS = 60_000;
@@ -85,20 +87,12 @@ function extractTokenAddressFromId(id: string, network: string): string {
 }
 
 async function fetchJson(url: string): Promise<Record<string, unknown> | null> {
-  try {
-    const res = await fetch(url, {
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) {
-      console.error(`[radar] ${url} -> HTTP ${res.status}`);
-      return null;
-    }
-    return (await res.json()) as Record<string, unknown>;
-  } catch (err) {
-    console.error(`[radar] ${url} failed:`, err);
-    return null;
-  }
+  return cachedFetchJson<Record<string, unknown>>(
+    `gecko:${url}`,
+    url,
+    30_000,
+    { timeoutMs: 10_000, headers: { Accept: 'application/json' } },
+  );
 }
 
 interface NetworkSnapshot {

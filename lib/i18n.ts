@@ -247,8 +247,12 @@ export type TranslationKey =
   | 'paywall.feature.whale'
   | 'paywall.feature.scanner'
   | 'paywall.tonConnect'
+  | 'paywall.tonConnect.hint'
   | 'paywall.cryptoPay'
-  | 'paywall.changelly'
+  | 'paywall.cryptoPay.hint'
+  | 'paywall.stars'
+  | 'paywall.stars.hint'
+  | 'paywall.referralHint'
   | 'paywall.tonPaymentNote'
   | 'risk.advisory'
   | 'risk.advisoryLabel'
@@ -267,7 +271,9 @@ export type TranslationKey =
   | 'common.yes'
   | 'common.no'
   | 'common.enabled'
-  | 'common.disabled';
+  | 'common.disabled'
+  | 'common.invalidAddress'
+  | 'risk.nfaLine';
 
 type TranslationDict = Record<TranslationKey, string>;
 
@@ -295,7 +301,7 @@ const en: TranslationDict = {
   'radar.action': 'Action',
   'radar.insiderDistribution': 'Insider Distribution',
   'radar.insiderTooltip':
-    'Whales are secretly exiting while retail liquidity accumulates.',
+    'Top holders were seen offloading into rising retail volume in the last 15 minutes.',
   'radar.lpLocked': 'LP Locked',
   'radar.lpUnlocked': 'Unlocked',
   'radar.clean': 'Clean',
@@ -319,7 +325,7 @@ const en: TranslationDict = {
   'whales.buy': 'BUY',
   'whales.sell': 'SELL',
   'whales.noData': 'No whale movements detected',
-  'whales.smartMoney': 'Active Smart Money Monitored',
+  'whales.smartMoney': 'Live Whale Alerts',
   'whales.tonInflows': 'TON Inflows (24h)',
   'whales.bscInflows': 'BSC Inflows (24h)',
   'whales.baseInflows': 'BASE Inflows (24h)',
@@ -365,7 +371,7 @@ const en: TranslationDict = {
   'scanner.creatorBalance': '{percent}% deployer share • mint status pinned to contract state',
   'scanner.insiderWeight': '{percent}% top holder concentration',
   'scanner.apexAiVerdict': 'Cluster fingerprint present. Handle sized, not stacked.',
-  'scanner.apexAiLabel': 'Terminal Verdict',
+  'scanner.apexAiLabel': 'Risk Assessment',
   'scanner.devClusterTitle': 'Dev Cluster Linker Visualizer',
   'scanner.deployerWallet': 'Deployer Wallet (Creator)',
   'scanner.insiderWalletA': 'Insider Wallet A',
@@ -442,7 +448,7 @@ const en: TranslationDict = {
   'profile.planFree': 'Free Tier',
   'profile.planPro': 'Pro Tier',
   'profile.upgrade': 'Upgrade to Pro',
-  'profile.walletConnected': 'Connected: Multi-Chain Wallet Connected',
+  'profile.walletConnected': 'Multi-Chain Wallet Connected',
   'profile.proConfig': 'Pro Configuration',
   'profile.lockedFeature': 'Pro Feature Locked',
   'profile.academyTitle': 'aDEX Academy',
@@ -455,7 +461,7 @@ const en: TranslationDict = {
   'profile.academyProTitle': 'Pro Tier Benefits',
   'profile.academyProContent': 'Pro subscription unlocks the full aDEX Terminal across TON, BSC, and Base. Advanced Radar filters hide low-liquidity pools and set custom volume spike thresholds so you catch only clean signals. Whale X-Ray reveals real position size, USD value and terminal read on every smart-money trade. Unlimited Security Vault gives you unrestricted contract audits — GoPlus on EVM, native jetton checks on TON. Custom Alerts notify you the second spikes or whale flows hit your thresholds. All for $9.90/month.',
   'profile.academyProCta': 'Upgrade to Pro',
-  'profile.supportPrompt': 'Didn\'t find an answer to your question? Connect with our global infrastructure architects directly.',
+  'profile.supportPrompt': 'Didn\'t find an answer in the Academy? Message the aDEX support bot — it replies in a few minutes.',
   'profile.supportButton': 'Live Support Chat',
   'profile.b2bTitle': 'Community Discussion / Join the Conversation',
   'profile.b2bButton': 'Open aDEX Community',
@@ -488,7 +494,7 @@ const en: TranslationDict = {
   'partners.evmPayUsdc': 'Pay 9.90 USDC (ERC-20)',
   'partners.evmProTier': 'Unlock Pro Tier — $9.90/month',
   'partners.evmDisconnect': 'Disconnect Wallet',
-  'partners.tonSecurityWarning': '⚠️ Wallet connection is strictly used to identify your Web3 identity and automatically route 20% referral commissions to your balance. The platform is non-custodial, safe, and never requests spending permissions for your assets.',
+  'partners.tonSecurityWarning': 'Wallet connection is used only to identify your Web3 address and route 20% referral commissions to it. The platform is non-custodial and never requests spending permissions on your assets.',
   'partners.connectTon': 'Connect Wallet via TON Connect 2.0',
   'partners.connectTonLine1': 'Connect Wallet',
   'partners.connectTonLine2': 'via TON Connect 2.0',
@@ -524,9 +530,13 @@ const en: TranslationDict = {
   'paywall.feature.scanner':
     'Unlimited Security Vault — Deep contract audits via GoPlus on EVM and native jetton checks on TON.',
   'paywall.tonConnect': 'Via TON Connect',
+  'paywall.tonConnect.hint': '≤ 9.9 USD • rate locked twice daily',
   'paywall.cryptoPay': 'Via Crypto Pay',
-  'paywall.changelly': "I don't have TON (Buy/Exchange)",
-  'paywall.tonPaymentNote': '≈ $9.90 USDT',
+  'paywall.cryptoPay.hint': 'TON, USDT, BTC, ETH.. • ≈ 9.9 USD',
+  'paywall.stars': 'Via Telegram Stars',
+  'paywall.stars.hint': 'Refundable within 21 days',
+  'paywall.referralHint': 'Referral 20% applies to any payment method.',
+  'paywall.tonPaymentNote': '≈ 9.9 USD',
   'risk.advisory':
     'aDEX Risk Advisory: trading micro-cap pools inside Base, BSC, and TON carries extreme capital volatility. Always verify LP-Lock state via our Security Vault before routing any transaction swap inputs.',
   'risk.advisoryLabel': 'aDEX Risk Advisory',
@@ -546,6 +556,8 @@ const en: TranslationDict = {
   'common.no': 'No',
   'common.enabled': 'Enabled',
   'common.disabled': 'Disabled',
+  'common.invalidAddress': 'Invalid token address',
+  'risk.nfaLine': 'Not financial advice. Do your own research.',
 };
 
 const ru: TranslationDict = {
@@ -573,7 +585,7 @@ const ru: TranslationDict = {
   'radar.action': 'Действие',
   'radar.insiderDistribution': 'Инсайдерская Раздача',
   'radar.insiderTooltip':
-    'Киты тихо выходят, пока ритейл-ликвидность накапливается.',
+    'Топ-холдеры фиксировали продажи на фоне роста ритейл-объёма за последние 15 минут.',
   'radar.lpLocked': 'LP Заблокирован',
   'radar.lpUnlocked': 'Разблокирован',
   'radar.clean': 'Чисто',
@@ -597,7 +609,7 @@ const ru: TranslationDict = {
   'whales.buy': 'ПОКУПКА',
   'whales.sell': 'ПРОДАЖА',
   'whales.noData': 'Движения китов не обнаружены',
-  'whales.smartMoney': 'Активных умных кошельков',
+  'whales.smartMoney': 'Активных алертов',
   'whales.tonInflows': 'Приток TON (24ч)',
   'whales.bscInflows': 'Приток BSC (24ч)',
   'whales.baseInflows': 'Приток BASE (24ч)',
@@ -644,7 +656,7 @@ const ru: TranslationDict = {
   'scanner.creatorBalance': '{percent}% у деплойера • mint-статус закреплён в контракте',
   'scanner.insiderWeight': '{percent}% концентрация у топ-холдера',
   'scanner.apexAiVerdict': 'Виден отпечаток кластера. Работаем аккуратно, малым сайзом.',
-  'scanner.apexAiLabel': 'Вердикт терминала',
+  'scanner.apexAiLabel': 'Оценка риска',
   'scanner.devClusterTitle': 'Визуализатор кластера разработчиков',
   'scanner.deployerWallet': 'Кошелёк разработчика (Создатель)',
   'scanner.insiderWalletA': 'Инсайдер Кошелёк A',
@@ -721,7 +733,7 @@ const ru: TranslationDict = {
   'profile.planFree': 'Бесплатный',
   'profile.planPro': 'Pro Тариф',
   'profile.upgrade': 'Перейти на Pro',
-  'profile.walletConnected': 'Подключено: Мультичейн Кошелёк Подключён',
+  'profile.walletConnected': 'Мультичейн кошелёк подключён',
   'profile.proConfig': 'Pro Конфигурация',
   'profile.lockedFeature': 'Pro Функция Заблокирована',
   'profile.academyTitle': 'aDEX Академия',
@@ -734,7 +746,7 @@ const ru: TranslationDict = {
   'profile.academyProTitle': 'Преимущества Pro Тарифа',
   'profile.academyProContent': 'Pro-подписка открывает полный aDEX Terminal в сетях TON, BSC и Base. Расширенные фильтры радара скрывают пулы с низкой ликвидностью и задают кастомные пороги всплесков объёма, чтобы ловить только чистые сигналы. Whale X-Ray показывает реальный размер позиции, стоимость в USD и оценку терминала для каждой сделки smart money. Безлимитный Security Vault даёт неограниченные аудиты контрактов — GoPlus на EVM, нативные проверки джеттонов на TON. Кастомные алерты мгновенно уведомляют, когда всплески или движения китов достигают ваших порогов. Всё это за $9.90/мес.',
   'profile.academyProCta': 'Перейти на Pro',
-  'profile.supportPrompt': 'Инструкция не ответила на ваш вопрос? Свяжитесь напрямую с главным архитектором платформы.',
+  'profile.supportPrompt': 'Не нашли ответ в Академии? Напишите в бот поддержки aDEX — отвечаем в течение нескольких минут.',
   'profile.supportButton': 'Написать в Поддержку',
   'profile.b2bTitle': 'Обсуждение в Сообществе / Присоединиться к Обсуждению',
   'profile.b2bButton': 'Открыть aDEX Community',
@@ -768,7 +780,7 @@ const ru: TranslationDict = {
   'partners.evmPayUsdc': 'Оплатить 9.90 USDC (ERC-20)',
   'partners.evmProTier': 'Открыть Pro Тариф — $9.90/мес',
   'partners.evmDisconnect': 'Отключить Кошелёк',
-  'partners.tonSecurityWarning': '⚠️ Подключение кошелька используется исключительно для фиксации вашей Web3-личности и автоматического зачисления 20% реферальных выплат прямо на ваш баланс. Платформа является некостодиальной, безопасной и не запрашивает доступ к вашим средствам.',
+  'partners.tonSecurityWarning': 'Подключение кошелька нужно только для того, чтобы зафиксировать ваш Web3-адрес и зачислять на него 20% реферальных выплат. Платформа некастодиальная и не запрашивает доступ к вашим средствам.',
   'partners.connectTon': 'Подключить Кошелёк через TON Connect 2.0',
   'partners.connectTonLine1': 'Подключить кошелёк',
   'partners.connectTonLine2': 'Через TON Connect 2.0',
@@ -805,9 +817,13 @@ const ru: TranslationDict = {
   'paywall.feature.scanner':
     'Безлимитный Security Vault — глубокие аудиты контрактов через GoPlus на EVM и нативные проверки джеттонов на TON.',
   'paywall.tonConnect': 'Via TON Connect',
+  'paywall.tonConnect.hint': '≤ 9.9 USD • курс фиксируется дважды в день',
   'paywall.cryptoPay': 'Via Crypto Pay',
-  'paywall.changelly': 'Нет TON? Купить / обменять',
-  'paywall.tonPaymentNote': '≈ $9.90 USDT',
+  'paywall.cryptoPay.hint': 'TON, USDT, BTC, ETH.. • ≈ 9.9 USD',
+  'paywall.stars': 'Via Telegram Stars',
+  'paywall.stars.hint': 'Возврат в течение 21 дня',
+  'paywall.referralHint': 'Реферальные 20% начисляются за любой способ оплаты.',
+  'paywall.tonPaymentNote': '≈ 9.9 USD',
   'risk.advisory':
     'Совет aDEX: Торговля микро-пулами в сетях Base, BSC и TON несёт экстремальную волатильность капитала. Всегда проверяйте статус блокировки ликвидности через Security Vault перед совершением обмена.',
   'risk.advisoryLabel': 'Совет aDEX',
@@ -827,6 +843,8 @@ const ru: TranslationDict = {
   'common.no': 'Нет',
   'common.enabled': 'Включён',
   'common.disabled': 'Выключен',
+  'common.invalidAddress': 'Неверный адрес токена',
+  'risk.nfaLine': 'Не финансовый совет. Проводите собственную проверку.',
 };
 
 const translations: Record<Language, TranslationDict> = { EN: en, RU: ru };

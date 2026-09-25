@@ -1,5 +1,7 @@
 import { TONAPI_BASE, tonApiHeaders } from '@/lib/tonapi';
 import { getSupabase } from '@/lib/supabase-server';
+import { fetchWithBackoff } from '@/lib/fetch-backoff';
+import { cachedFetch, cachedFetchJson } from '@/lib/cached-fetch';
 import type { TonMintStatus, TonOwnerStatus, TonSafetyDetails } from '@/lib/types';
 
 const GECKO_TERMINAL_BASE = 'https://api.geckoterminal.com/api/v2';
@@ -78,29 +80,34 @@ interface TonJettonRaw {
 }
 
 async function fetchJettonMasterRaw(address: string): Promise<TonJettonRaw | null> {
+  const cacheKey = `tonapi:jetton:${address}`;
   try {
-    const res = await fetch(`${TONAPI_BASE}/jettons/${address}`, {
-      headers: tonApiHeaders(),
-      signal: AbortSignal.timeout(6000),
+    const json = await cachedFetch<Record<string, unknown> | null>(cacheKey, 5 * 60 * 1000, async () => {
+      const res = await fetchWithBackoff(`${TONAPI_BASE}/jettons/${address}`, {
+        headers: tonApiHeaders(),
+      }, { timeoutMs: 6000 });
+      if (!res.ok) {
+        if (res.status === 404) throw new TonScanError('not_a_jetton', 'TonAPI: адрес не является jetton-контрактом (404)');
+        if (res.status === 401) throw new TonScanError('tonapi_unauthorized', 'TonAPI: неверный или отсутствующий TONAPI_KEY (401)');
+        if (res.status === 429) throw new TonScanError('tonapi_rate_limited', 'TonAPI: лимит частоты превышен (429). Добавьте/обновите TONAPI_KEY.');
+        throw new TonScanError('tonapi_http_error', `TonAPI ответил HTTP ${res.status}`);
+      }
+      return (await res.json()) as Record<string, unknown>;
     });
-    if (!res.ok) {
-      if (res.status === 404) throw new TonScanError('not_a_jetton', 'TonAPI: адрес не является jetton-контрактом (404)');
-      if (res.status === 401) throw new TonScanError('tonapi_unauthorized', 'TonAPI: неверный или отсутствующий TONAPI_KEY (401)');
-      if (res.status === 429) throw new TonScanError('tonapi_rate_limited', 'TonAPI: лимит частоты превышен (429). Добавьте/обновите TONAPI_KEY.');
-      throw new TonScanError('tonapi_http_error', `TonAPI ответил HTTP ${res.status}`);
-    }
-    const json = await res.json();
-    const admin = (json?.admin ?? json?.admin_address ?? json?.metadata?.admin_address ?? null) as
+
+    if (!json) return null;
+    const j = json as Record<string, any>;
+    const admin = (j?.admin ?? j?.admin_address ?? j?.metadata?.admin_address ?? null) as
       | string
       | { address?: string }
       | null;
     const adminAddress =
       typeof admin === 'string' ? admin : admin?.address ?? null;
-    const mintable = Boolean(json?.mintable ?? json?.metadata?.mintable ?? false);
-    const totalHolders = Number(json?.holders_count ?? 0) || 0;
-    const verification = String(json?.verification ?? 'none').toLowerCase();
+    const mintable = Boolean(j?.mintable ?? j?.metadata?.mintable ?? false);
+    const totalHolders = Number(j?.holders_count ?? 0) || 0;
+    const verification = String(j?.verification ?? 'none').toLowerCase();
     const verified = verification === 'whitelist' || verification === 'verified';
-    const symbol = String(json?.metadata?.symbol ?? json?.symbol ?? '').slice(0, 12);
+    const symbol = String(j?.metadata?.symbol ?? j?.symbol ?? '').slice(0, 12);
     return {
       mintable,
       adminAddress,
@@ -119,14 +126,17 @@ async function fetchJettonMasterRaw(address: string): Promise<TonJettonRaw | nul
 }
 
 async function fetchJettonHoldersRaw(address: string): Promise<TonHolder[]> {
+  const cacheKey = `tonapi:holders:${address}`;
   try {
-    const res = await fetch(`${TONAPI_BASE}/jettons/${address}/holders?limit=20`, {
-      headers: tonApiHeaders(),
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!res.ok) return [];
-    const json = await res.json();
-    const rawList: unknown = json?.holders;
+    const json = await cachedFetchJson<Record<string, unknown>>(
+      cacheKey,
+      `${TONAPI_BASE}/jettons/${address}/holders?limit=20`,
+      5 * 60 * 1000,
+      { timeoutMs: 6000, headers: tonApiHeaders() },
+    );
+    if (!json) return [];
+    const j = json as Record<string, any>;
+    const rawList: unknown = j?.holders;
     if (!Array.isArray(rawList)) return [];
     const result: TonHolder[] = [];
     for (const h of rawList as Array<Record<string, unknown>>) {
@@ -152,18 +162,21 @@ interface TonPoolInfo {
 }
 
 async function fetchTonPools(address: string): Promise<TonPoolInfo[]> {
+  const cacheKey = `gecko:pools:${address}`;
   try {
-    const res = await fetch(
+    const json = await cachedFetchJson<Record<string, unknown>>(
+      cacheKey,
       `${GECKO_TERMINAL_BASE}/networks/ton/tokens/${address}/pools?page=1`,
-      { signal: AbortSignal.timeout(8000) },
+      5 * 60 * 1000,
+      { timeoutMs: 8000 },
     );
-    if (!res.ok) return [];
-    const json = await res.json();
-    const pools: unknown = json?.data;
+    if (!json) return [];
+    const j = json as Record<string, any>;
+    const pools: unknown = j?.data;
     if (!Array.isArray(pools)) return [];
 
-    const included: Array<Record<string, unknown>> = Array.isArray(json?.included)
-      ? (json.included as Array<Record<string, unknown>>)
+    const included: Array<Record<string, unknown>> = Array.isArray(j?.included)
+      ? (j.included as Array<Record<string, unknown>>)
       : [];
     const dexById = new Map<string, string>();
     for (const inc of included) {
@@ -327,14 +340,15 @@ export async function auditTonJetton(address: string): Promise<TonScannerOutput>
       : 'not_mintable'
     : 'unknown';
   const adminNorm = (master?.adminAddress ?? '').trim();
-  const ownerActive = !!master && !!adminNorm && !RENOUNCED_TON_ADMINS.has(adminNorm);
+  const adminEmpty = adminNorm === '' || RENOUNCED_TON_ADMINS.has(adminNorm);
   const ownerStatus: TonOwnerStatus = !master
     ? 'unknown'
-    : adminNorm === ''
-      ? 'unknown'
-      : ownerActive
-        ? 'active_admin'
-        : 'renounced';
+    : adminEmpty
+      ? master.mintable
+        ? 'unknown'
+        : 'renounced'
+      : 'active_admin';
+  const ownerActive = ownerStatus === 'active_admin';
 
   const score = master
     ? scoreFromSignals({

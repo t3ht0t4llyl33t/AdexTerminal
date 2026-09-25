@@ -20,6 +20,16 @@ export interface GroqChatOptions {
   logTag?: string;
 }
 
+export interface GroqResult {
+  content: string;
+  degraded: boolean;
+}
+
+export interface GroqJsonResult<T> {
+  data: T;
+  degraded: boolean;
+}
+
 function collectKeys(): string[] {
   const keys: string[] = [];
   const primary = process.env.SUPPORT_LLM_API_KEY || '';
@@ -43,9 +53,9 @@ function orderKeys(keys: string[]): string[] {
   return [...keys.slice(start), ...keys.slice(0, start)];
 }
 
-export async function callGroqChat(opts: GroqChatOptions): Promise<string> {
+export async function callGroqChat(opts: GroqChatOptions): Promise<GroqResult> {
   const keys = collectKeys();
-  if (keys.length === 0) return '';
+  if (keys.length === 0) return { content: '', degraded: true };
 
   const models = opts.models && opts.models.length > 0 ? opts.models : DEFAULT_MODELS;
   const timeoutMs = opts.timeoutMs ?? 30_000;
@@ -74,7 +84,7 @@ export async function callGroqChat(opts: GroqChatOptions): Promise<string> {
         if (res.ok) {
           const data = (await res.json()) as GroqResponse;
           const content = data.choices?.[0]?.message?.content?.trim() || '';
-          if (content) return content;
+          if (content) return { content, degraded: false };
           // Empty content — try next model/key
           continue;
         }
@@ -95,29 +105,29 @@ export async function callGroqChat(opts: GroqChatOptions): Promise<string> {
     }
   }
 
-  return '';
+  return { content: '', degraded: true };
 }
 
 export async function callGroqJson<T>(
   opts: GroqChatOptions,
   fallback: T,
-): Promise<T> {
-  const raw = await callGroqChat(opts);
-  if (!raw) return fallback;
+): Promise<GroqJsonResult<T>> {
+  const { content, degraded } = await callGroqChat(opts);
+  if (!content) return { data: fallback, degraded: true };
   try {
-    const cleaned = raw.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
-    return JSON.parse(cleaned) as T;
+    const cleaned = content.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+    return { data: JSON.parse(cleaned) as T, degraded: false };
   } catch {
-    return fallback;
+    return { data: fallback, degraded: true };
   }
 }
 
 export function getOfflineSupportReply(lang: 'RU' | 'EN'): string {
   if (lang === 'RU') {
     return [
-      '*Служба поддержки временно перегружена*',
+      '*AI-ассистент временно недоступен*',
       '',
-      'Я не могу ответить прямо сейчас, но вот быстрая справка:',
+      'Ниже — краткая справка по приложению:',
       '',
       '*Radar* — тренды по TON, BSC, BASE (Gecko Terminal).',
       '*Whales* — крупные покупки и продажи, отфильтрованные от MEV.',
@@ -129,9 +139,9 @@ export function getOfflineSupportReply(lang: 'RU' | 'EN'): string {
     ].join('\n');
   }
   return [
-    '*Support is temporarily overloaded*',
+    '*AI assistant temporarily unavailable*',
     '',
-    "I can't reply right now, but here's a quick reference:",
+    'Quick reference below:',
     '',
     '*Radar* — trending tokens on TON, BSC, BASE (Gecko Terminal).',
     '*Whales* — large buys and sells, filtered from MEV noise.',
@@ -146,9 +156,9 @@ export function getOfflineSupportReply(lang: 'RU' | 'EN'): string {
 export function getOfflinePartnershipsReply(lang: 'RU' | 'EN'): string {
   if (lang === 'RU') {
     return [
-      '*Здравствуйте — служба по партнёрствам*',
+      '*AI-ассистент временно недоступен*',
       '',
-      'Наш авто-ассистент временно недоступен, но чтобы ускорить обработку, пришлите одним сообщением:',
+      'Чтобы ускорить обработку, пришлите одним сообщением:',
       '',
       '1. Название бренда / токена',
       '2. Ссылку на сайт или проект',
@@ -158,9 +168,9 @@ export function getOfflinePartnershipsReply(lang: 'RU' | 'EN'): string {
     ].join('\n');
   }
   return [
-    '*Hello — Partnerships desk*',
+    '*AI assistant temporarily unavailable*',
     '',
-    "Our auto-assistant is temporarily unavailable. To speed things up, reply in one message with:",
+    'To speed things up, reply in one message with:',
     '',
     '1. Brand / Token name',
     '2. Website or project link',
