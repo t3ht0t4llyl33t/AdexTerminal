@@ -57,7 +57,7 @@ function buildProdCsp(nonce: string): string {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     "img-src 'self' data: blob: https:",
-    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://tonapi.io https://api.tonapi.io https://api.mainnet.ton.org https://rpc.ankr.com https://api.groq.com https://api.coingecko.com https://min-api.cryptocompare.com https://api.binance.com",
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://tonapi.io https://api.tonapi.io https://bridge.tonapi.io https://api.mainnet.ton.org https://rpc.ankr.com https://api.groq.com https://api.coingecko.com https://min-api.cryptocompare.com https://api.binance.com https://tonconnect.io https://bridge.tonapi.io",
     "frame-src https://t.me https://web.telegram.org",
     "frame-ancestors https://t.me https://web.telegram.org",
     "manifest-src 'self'",

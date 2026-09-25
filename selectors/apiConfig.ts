@@ -8,7 +8,7 @@ export const GECKO_TERMINAL_BASE = 'https://api.geckoterminal.com/api/v2';
 export const POLL_INTERVAL_MS = 60_000;
 
 const MIN_LIQUIDITY_USD = 1_000;
-const MIN_SPIKE_PCT = 20;
+const MIN_SPIKE_PCT = 5;
 const MAX_TOKENS_PER_NETWORK = 20;
 const MAX_TRADE_POOLS_PER_NETWORK = 24;
 const WINDOW_15M_MS = 15 * 60 * 1000;
@@ -254,7 +254,14 @@ async function fetchNetworkSnapshot(
     const totalTx = buys15 + sells15;
     const expected15 = h1Vol > 0 ? h1Vol / 4 : h24Vol > 0 ? h24Vol / 96 : 0;
 
-    let spike = expected15 > 0 ? Math.round(((volume15 - expected15) / expected15) * 100) : 0;
+    let spike: number;
+    if (expected15 > 0) {
+      spike = Math.round(((volume15 - expected15) / expected15) * 100);
+    } else if (volume15 > 0) {
+      spike = 0;
+    } else {
+      spike = 0;
+    }
     spike = Math.max(0, spike);
 
     let buyPressure = 50;
@@ -295,7 +302,7 @@ async function fetchNetworkSnapshot(
 
   tokens.sort((a, b) => b.volumeSpike15m - a.volumeSpike15m);
   whales.sort((a, b) => b.timestamp - a.timestamp);
-  return { tokens: tokens.filter((t) => t.volumeSpike15m >= MIN_SPIKE_PCT).slice(0, MAX_TOKENS_PER_NETWORK), whales };
+  return { tokens: tokens.slice(0, MAX_TOKENS_PER_NETWORK), whales };
 }
 
 async function loadDbCache(): Promise<{ tokens: TokenRow[]; whales: WhaleAlert[] } | null> {
@@ -342,7 +349,7 @@ function mergeTokens(previous: TokenRow[], fresh: TokenRow[], network: NetworkKe
   for (const net of NETWORK_ORDER) {
     const list = perNetwork.get(net) ?? [];
     list.sort((a, b) => b.volumeSpike15m - a.volumeSpike15m);
-    merged.push(...list.filter((t) => t.volumeSpike15m >= MIN_SPIKE_PCT).slice(0, MAX_TOKENS_PER_NETWORK));
+    merged.push(...list.slice(0, MAX_TOKENS_PER_NETWORK));
   }
   return merged;
 }
