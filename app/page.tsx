@@ -80,20 +80,20 @@ export default function Home() {
   const [fetchError, setFetchError] = useState(false);
   const [fetchTick, setFetchTick] = useState(0);
 
-  const isMiniApp =
-    typeof window !== 'undefined' &&
-    (() => {
-      try {
-        return (
-          window.location !== window.parent.location ||
+  const [isMiniApp, setIsMiniApp] = useState(false);
+
+  useEffect(() => {
+    try {
+      setIsMiniApp(
+        window.location !== window.parent.location ||
           new URLSearchParams(window.location.search).has('tgWebAppData') ||
           (window as unknown as Record<string, unknown>).TelegramWebview !== undefined ||
-          navigator.userAgent.includes('Telegram')
-        );
-      } catch {
-        return true;
-      }
-    })();
+          navigator.userAgent.includes('Telegram'),
+      );
+    } catch {
+      setIsMiniApp(true);
+    }
+  }, [])
 
   useEffect(() => {
     initTelegramWebApp();
@@ -675,7 +675,7 @@ export default function Home() {
           />
         )}
       </div>
-      <DesktopGate lang={lang} />
+      <DesktopGate lang={lang} isMiniApp={isMiniApp} />
     </TonConnectUIProvider>
   );
 }
