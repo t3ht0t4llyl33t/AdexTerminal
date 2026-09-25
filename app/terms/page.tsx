@@ -16,7 +16,7 @@ export default function TermsPage() {
             aDEX Terminal
           </span>
           <h1 className="text-2xl font-black tracking-tight">Terms of Use</h1>
-          <p className="text-xs text-white/40">Last updated: 18 September 2026</p>
+          <p className="text-xs text-white/40">Last updated: 25 September 2026</p>
         </div>
 
         <p className="text-sm text-white/70">
@@ -66,7 +66,22 @@ export default function TermsPage() {
         </section>
 
         <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-white">5. Prohibited use</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-white">5. Custodial billing wallet</h2>
+          <p className="text-sm text-white/65">
+            Pro payments made through TON Connect are routed to a service TON wallet operated by
+            aDEX. That wallet is used exclusively for subscription billing — it holds no user
+            funds. Once a payment lands, platform fees and referral commissions are forwarded from
+            that wallet automatically to the correct recipients.
+          </p>
+          <p className="text-sm text-white/65">
+            You retain full custody of your own wallet at all times. TON Connect only receives your
+            signature for the specific Pro payment you approve — it does not grant aDEX any ongoing
+            spending permission, and no seed phrase, key, or password is ever transmitted.
+          </p>
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-white">6. Prohibited use</h2>
           <p className="text-sm text-white/65">
             You may not use the terminal to scrape data at industrial scale, resell aggregated
             output, or attempt to disrupt the service. Automated abuse triggers rate-limit and, on
@@ -75,7 +90,7 @@ export default function TermsPage() {
         </section>
 
         <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-white">6. Availability and changes</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-white">7. Availability and changes</h2>
           <p className="text-sm text-white/65">
             The terminal depends on third-party public data sources. Outages, rate limits or
             upstream data errors may temporarily degrade features. We reserve the right to change
@@ -85,7 +100,7 @@ export default function TermsPage() {
         </section>
 
         <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-white">7. Contact</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-white">8. Contact</h2>
           <p className="text-sm text-white/65">
             Support and legal enquiries:{' '}
             <a

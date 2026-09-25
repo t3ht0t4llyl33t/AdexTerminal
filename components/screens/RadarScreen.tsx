@@ -13,7 +13,8 @@ import { WatchlistHeart } from '@/components/shared/WatchlistHeart';
 import { ScamodarCard } from '@/components/shared/ScamodarCard';
 import { formatUsd, formatAddress } from '@/components/shared/Format';
 import { cn } from '@/lib/utils';
-import { buildTradeLink, type TradeSettings, DEFAULT_TRADE_SETTINGS } from '@/lib/trade-links';
+import { buildTradeLink, openTradeLink, isValidTokenAddress, type TradeSettings, DEFAULT_TRADE_SETTINGS } from '@/lib/trade-links';
+import { useInvalidAddressToast } from '@/components/shared/InvalidAddressToast';
 
 export interface WatchlistKey {
   network: string;
@@ -58,6 +59,7 @@ export function RadarScreen({
   const [sortKey, setSortKey] = useState<SortKey>('volumeSpike15m');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [viewMode, setViewMode] = useState<'all' | 'watch'>('all');
+  const invalidToast = useInvalidAddressToast(lang);
 
   const watchSet = useMemo(() => {
     const s = new Set<string>();
@@ -382,16 +384,18 @@ export function RadarScreen({
                     </td>
 
                     <td className="min-w-0 overflow-hidden px-1 sm:px-2 py-2.5 text-center">
-                      <a
-                        href={buildTradeLink(token.network, token.address, tradeSettings)}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        onClick={() => {
+                          if (!isValidTokenAddress(token.network, token.address)) { invalidToast.notify(); return; }
+                          const link = buildTradeLink(token.network, token.address, tradeSettings);
+                          if (link) openTradeLink(link);
+                        }}
                         aria-label={translate(lang, 'radar.mirrorLink')}
                         title={translate(lang, 'radar.mirrorLink')}
                         className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-accent/15 border border-accent/30 text-accent-light hover:bg-accent/25 hover:border-accent/50 transition-all"
                       >
                         <ArrowUpRight className="h-4 w-4" />
-                      </a>
+                      </button>
                     </td>
                   </tr>
                 );
@@ -400,6 +404,7 @@ export function RadarScreen({
           </tbody>
         </table>
       </div>
+      {invalidToast.element}
     </div>
   );
 }

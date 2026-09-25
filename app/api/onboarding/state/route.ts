@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getSupabase } from '@/lib/supabase-server';
 import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
+import { privateNoStore } from '@/lib/edge-cache';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -46,9 +47,9 @@ export async function GET(req: NextRequest) {
     .maybeSingle();
 
   if (error) {
-    return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 });
+    return privateNoStore({ ok: false, error: 'db_error' }, 500);
   }
-  return NextResponse.json({ ok: true, state: shape(data as OnboardingRow | null) });
+  return privateNoStore({ ok: true, state: shape(data as OnboardingRow | null) });
 }
 
 export async function POST(req: NextRequest) {
@@ -107,7 +108,7 @@ export async function POST(req: NextRequest) {
       }
       break;
     default:
-      return NextResponse.json({ ok: false, error: 'bad_action' }, { status: 400 });
+      return privateNoStore({ ok: false, error: 'bad_action' }, 400);
   }
   next.updated_at = nowIso;
 
@@ -116,7 +117,7 @@ export async function POST(req: NextRequest) {
     .upsert(next, { onConflict: 'telegram_user_id' });
 
   if (upsertErr) {
-    return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 });
+    return privateNoStore({ ok: false, error: 'db_error' }, 500);
   }
-  return NextResponse.json({ ok: true, state: shape(next) });
+  return privateNoStore({ ok: true, state: shape(next) });
 }

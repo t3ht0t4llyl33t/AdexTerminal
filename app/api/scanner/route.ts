@@ -3,6 +3,8 @@ import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
 import { getSupabase } from '@/lib/supabase-server';
 import { cachedJson } from '@/lib/edge-cache';
 import { auditTonJetton, TonScanError, validateTonAddress } from '@/lib/ton-scanner';
+import { fetchWithBackoff } from '@/lib/fetch-backoff';
+import { cachedFetch, cachedFetchJson } from '@/lib/cached-fetch';
 import type { SecurityScan, Network } from '@/lib/types';
 
 const GECKO_TERMINAL_BASE = 'https://api.geckoterminal.com/api/v2';
@@ -107,20 +109,25 @@ async function fetchGoPlusSecurity(address: string, network: Network, chainId?: 
   if (network === 'TON') return null;
 
   const cid = chainId ?? (network === 'BSC' ? '56' : '8453');
+  const cacheKey = `goplus:${cid}:${address.toLowerCase()}`;
 
   try {
-    const res = await fetch(
-      `${GOPLUS_BASE}/token_security/${cid}?contract_addresses=${address}`,
-      { signal: AbortSignal.timeout(8000) },
-    );
+    const json = await cachedFetch<Record<string, unknown> | null>(cacheKey, 5 * 60 * 1000, async () => {
+      const res = await fetchWithBackoff(
+        `${GOPLUS_BASE}/token_security/${cid}?contract_addresses=${address}`,
+        {},
+        { timeoutMs: 8000 },
+      );
+      if (!res.ok) {
+        console.error(`[scanner] GoPlus error ${res.status} for ${address}`);
+        return null;
+      }
+      return (await res.json()) as Record<string, unknown>;
+    });
 
-    if (!res.ok) {
-      console.error(`[scanner] GoPlus error ${res.status} for ${address}`);
-      return null;
-    }
+    if (!json) return null;
 
-    const json = await res.json();
-    const data = json?.result?.[address?.toLowerCase()];
+    const data = (json as { result?: Record<string, any> })?.result?.[address?.toLowerCase()];
     if (!data) return null;
 
     const buyTax = parseFloat(data.buy_tax ?? '0') || 0;
@@ -237,14 +244,16 @@ async function fetchGoPlusForEvm(address: string): Promise<GoPlusData | null> {
 
 async function fetchTokenSymbol(address: string, network: Network): Promise<string> {
   const networkId = network === 'TON' ? 'ton' : network === 'BSC' ? 'bsc' : 'base';
+  const cacheKey = `gecko:symbol:${networkId}:${address}`;
   try {
-    const res = await fetch(
+    const json = await cachedFetchJson<Record<string, unknown>>(
+      cacheKey,
       `${GECKO_TERMINAL_BASE}/networks/${networkId}/tokens/${address}`,
-      { signal: AbortSignal.timeout(5000) },
+      5 * 60 * 1000,
+      { timeoutMs: 5000 },
     );
-    if (!res.ok) return 'UNKNOWN';
-    const json = await res.json();
-    const attrs = json?.data?.attributes;
+    if (!json) return 'UNKNOWN';
+    const attrs = (json as { data?: { attributes?: { symbol?: string; name?: string } } })?.data?.attributes;
     if (attrs?.symbol) return attrs.symbol as string;
     if (attrs?.name) return (attrs.name as string).slice(0, 10);
     return 'UNKNOWN';
@@ -617,10 +626,16 @@ export async function POST(req: NextRequest) {
             });
             if (rpcError) throw new Error('rpc failed');
           } catch {
+            const { data: existing } = await supabase
+              .from('scan_limits')
+              .select('bonus_scans')
+              .eq('telegram_user_id', tgUser)
+              .maybeSingle();
+            const currentBonus = (existing?.bonus_scans as number) || 0;
             await supabase
               .from('scan_limits')
               .update({
-                bonus_scans: BONUS_SCANS,
+                bonus_scans: currentBonus + BONUS_SCANS,
                 updated_at: new Date().toISOString(),
               })
               .eq('telegram_user_id', tgUser);
@@ -722,7 +737,7 @@ export async function GET(req: NextRequest) {
       return cachedJson(
         req,
         { data: [], cached: false, timestamp: Date.now(), source: 'empty' },
-        { sMaxAge: 30, swr: 120, staleReason: 'no_history' },
+        { sMaxAge: 30, swr: 120, staleReason: 'no_history', scope: 'user' },
         'fallback',
       );
     }
@@ -758,14 +773,14 @@ export async function GET(req: NextRequest) {
     return cachedJson(
       req,
       { data: scans, cached: false, timestamp: Date.now(), source: 'live' },
-      { sMaxAge: 30, swr: 120 },
+      { sMaxAge: 30, swr: 120, scope: 'user' },
       'live',
     );
   } catch {
     return cachedJson(
       req,
       { data: [], cached: false, timestamp: Date.now(), source: 'empty' },
-      { sMaxAge: 30, swr: 120, staleReason: 'db_error' },
+      { sMaxAge: 30, swr: 120, staleReason: 'db_error', scope: 'user' },
       'fallback',
     );
   }

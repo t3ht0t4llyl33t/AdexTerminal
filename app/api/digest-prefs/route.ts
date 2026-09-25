@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
+import { privateNoStore } from '@/lib/edge-cache';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseAdmin();
     if (!supabase) {
-      return NextResponse.json({ ok: true, enabled: true });
+      return privateNoStore({ ok: true, enabled: true });
     }
 
     if (action === 'save') {
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
         { telegram_user_id: tgUserId, enabled, updated_at: new Date().toISOString() },
         { onConflict: 'telegram_user_id' },
       );
-      return NextResponse.json({ ok: true, enabled });
+      return privateNoStore({ ok: true, enabled });
     }
 
     const { data } = await supabase
@@ -43,8 +44,8 @@ export async function POST(req: NextRequest) {
       .eq('telegram_user_id', tgUserId)
       .maybeSingle();
 
-    return NextResponse.json({ ok: true, enabled: data?.enabled ?? true });
+    return privateNoStore({ ok: true, enabled: data?.enabled ?? true });
   } catch {
-    return NextResponse.json({ ok: false, error: 'server_error' }, { status: 500 });
+    return privateNoStore({ ok: false, error: 'server_error' }, 500);
   }
 }

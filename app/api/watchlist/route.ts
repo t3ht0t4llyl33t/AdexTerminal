@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
+import { computeEtag, privateNoStore } from '@/lib/edge-cache';
+
+const PRIVATE_HEADERS = { 'Cache-Control': 'private, no-store', 'CDN-Cache-Control': 'no-store' };
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -55,7 +58,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseAdmin();
     if (!supabase) {
-      return NextResponse.json({ ok: false, error: 'db_unavailable' }, { status: 500 });
+      return NextResponse.json({ ok: false, error: 'db_unavailable' }, { status: 500, headers: PRIVATE_HEADERS });
     }
 
     if (action === 'list') {
@@ -65,19 +68,24 @@ export async function POST(req: NextRequest) {
         .eq('telegram_user_id', tgUserId)
         .order('added_at', { ascending: false });
       const pro = await isPro(supabase, tgUserId);
-      return NextResponse.json({
+      const payload = {
         ok: true,
         items: data ?? [],
         limit: pro ? null : FREE_LIMIT,
         isPro: pro,
-      });
+      };
+      const etag = computeEtag(payload);
+      if (req.headers.get('if-none-match') === etag) {
+        return new NextResponse(null, { status: 304, headers: { ETag: etag, ...PRIVATE_HEADERS } });
+      }
+      return NextResponse.json(payload, { headers: { ETag: etag, ...PRIVATE_HEADERS } });
     }
 
     if (action === 'add') {
       const network = normalizeNetwork(body.network);
       const address = normalizeAddress(body.token_address);
       if (!network || !address) {
-        return NextResponse.json({ ok: false, error: 'invalid_token' }, { status: 400 });
+        return privateNoStore({ ok: false, error: 'invalid_token' }, 400);
       }
 
       const pro = await isPro(supabase, tgUserId);
@@ -87,9 +95,9 @@ export async function POST(req: NextRequest) {
           .select('*', { count: 'exact', head: true })
           .eq('telegram_user_id', tgUserId);
         if ((count ?? 0) >= FREE_LIMIT) {
-          return NextResponse.json(
+          return privateNoStore(
             { ok: false, error: 'limit_reached', limit: FREE_LIMIT },
-            { status: 403 },
+            403,
           );
         }
       }
@@ -108,16 +116,16 @@ export async function POST(req: NextRequest) {
         { onConflict: 'telegram_user_id,network,token_address' },
       );
       if (error) {
-        return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 });
+        return privateNoStore({ ok: false, error: 'db_error' }, 500);
       }
-      return NextResponse.json({ ok: true });
+      return privateNoStore({ ok: true });
     }
 
     if (action === 'remove') {
       const network = normalizeNetwork(body.network);
       const address = normalizeAddress(body.token_address);
       if (!network || !address) {
-        return NextResponse.json({ ok: false, error: 'invalid_token' }, { status: 400 });
+        return privateNoStore({ ok: false, error: 'invalid_token' }, 400);
       }
       const { error } = await supabase
         .from('user_watchlist')
@@ -126,13 +134,13 @@ export async function POST(req: NextRequest) {
         .eq('network', network)
         .eq('token_address', address);
       if (error) {
-        return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 });
+        return privateNoStore({ ok: false, error: 'db_error' }, 500);
       }
-      return NextResponse.json({ ok: true });
+      return privateNoStore({ ok: true });
     }
 
-    return NextResponse.json({ ok: false, error: 'unknown_action' }, { status: 400 });
+    return privateNoStore({ ok: false, error: 'unknown_action' }, 400);
   } catch {
-    return NextResponse.json({ ok: false, error: 'server_error' }, { status: 500 });
+    return privateNoStore({ ok: false, error: 'server_error' }, 500);
   }
 }

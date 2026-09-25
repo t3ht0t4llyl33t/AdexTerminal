@@ -1,13 +1,11 @@
 import { NextRequest } from 'next/server';
 import { getSupabase } from '@/lib/supabase-server';
 import { getWhalesFromCache } from '@/selectors/apiConfig';
-import { cachedJson } from '@/lib/edge-cache';
+import { cachedJson, PUBLIC_READ_CACHE } from '@/lib/edge-cache';
 import type { WhaleAlert } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-const CACHE_OPTS = { sMaxAge: 30, swr: 120 };
 
 async function loadFromDb(): Promise<WhaleAlert[] | null> {
   try {
@@ -30,7 +28,7 @@ export async function GET(req: NextRequest) {
     return cachedJson(
       req,
       { data: memory, cached: true, timestamp: Date.now(), source: 'cache' },
-      CACHE_OPTS,
+      PUBLIC_READ_CACHE,
       'live',
     );
   }
@@ -40,7 +38,7 @@ export async function GET(req: NextRequest) {
     return cachedJson(
       req,
       { data: db, cached: true, timestamp: Date.now(), source: 'cache' },
-      CACHE_OPTS,
+      PUBLIC_READ_CACHE,
       'live',
     );
   }
@@ -48,7 +46,7 @@ export async function GET(req: NextRequest) {
   return cachedJson(
     req,
     { data: [], cached: true, timestamp: Date.now(), source: 'cache' },
-    { ...CACHE_OPTS, staleReason: 'no_data' },
+    { ...PUBLIC_READ_CACHE, staleReason: 'no_data' },
     'fallback',
   );
 }

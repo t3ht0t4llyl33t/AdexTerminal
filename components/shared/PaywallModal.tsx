@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { X, Lock, Rocket, ExternalLink, Loader2, Wallet, Bot, RefreshCw, Search, LineChart, ShieldAlert } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, Lock, Rocket, ExternalLink, Loader2, Wallet, Bot, Star, Search, LineChart, ShieldAlert } from 'lucide-react';
 import type { Language } from '@/lib/types';
 import { translate } from '@/lib/i18n';
 import { useTonConnectUI } from '@tonconnect/ui-react';
@@ -17,6 +17,7 @@ interface PaywallModalProps {
 
 const TELEGRAM_BOT_URL = 'https://t.me/aDEX_Live_Support_bot';
 const PREMIUM_PRICE_USD_TARGET = 9.9;
+const PREMIUM_PRICE_STARS = 555;
 const FALLBACK_PRICE_TON = 3.3;
 
 interface PricingSnapshot {
@@ -24,6 +25,16 @@ interface PricingSnapshot {
   price_usd_target: number;
   updated_at: string | null;
   source: string;
+}
+
+interface TelegramWebAppShim {
+  openInvoice?: (url: string, cb?: (status: string) => void) => void;
+}
+
+function getWebApp(): TelegramWebAppShim | null {
+  if (typeof window === 'undefined') return null;
+  const tg = (window as unknown as { Telegram?: { WebApp?: TelegramWebAppShim } }).Telegram;
+  return tg?.WebApp ?? null;
 }
 
 function formatTon(price: number): string {
@@ -46,6 +57,7 @@ export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalPro
     source: 'fallback',
   });
   const [tonConnectUI] = useTonConnectUI();
+  const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -73,7 +85,42 @@ export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalPro
       .catch(() => {});
   }, [open]);
 
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) {
+        window.clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, []);
+
   if (!open) return null;
+
+  const pollProStatus = () => {
+    if (pollRef.current) return;
+    let attempts = 0;
+    pollRef.current = window.setInterval(async () => {
+      attempts += 1;
+      try {
+        const res = await authFetch('/api/referral-stats', {
+          method: 'POST',
+          body: JSON.stringify({ lang }),
+        });
+        const data = res.ok ? await res.json() : null;
+        if (data?.ok && data.stats?.isPro) {
+          window.clearInterval(pollRef.current!);
+          pollRef.current = null;
+          setSuccess(lang === 'RU' ? 'Premium активирован!' : 'Premium activated!');
+        }
+      } catch {
+        // ignore
+      }
+      if (attempts >= 12 && pollRef.current) {
+        window.clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    }, 5000);
+  };
 
   const handleTonConnectPayment = async () => {
     setError(null);
@@ -130,6 +177,51 @@ export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalPro
     }
   };
 
+  const handleStarsPayment = async () => {
+    setError(null);
+    setSuccess(null);
+    setLoading('stars');
+    trackEvent('pro_upgrade_started', { method: 'stars' });
+
+    try {
+      const res = await authFetch('/api/billing/stars', {
+        method: 'POST',
+        body: JSON.stringify({ lang }),
+      });
+
+      if (!res.ok) throw new Error('stars invoice failed');
+      const data = await res.json();
+      if (!data.url) throw new Error('no url');
+
+      const webApp = getWebApp();
+      if (webApp?.openInvoice) {
+        webApp.openInvoice(data.url, (status: string) => {
+          if (status === 'paid') {
+            setSuccess(lang === 'RU'
+              ? 'Оплата получена! Premium активируется в течение минуты.'
+              : 'Payment received! Premium activates within a minute.');
+            trackEvent('pro_upgrade_completed', { method: 'stars' });
+            pollProStatus();
+          } else if (status === 'cancelled') {
+            setError(lang === 'RU' ? 'Оплата отменена.' : 'Payment cancelled.');
+          } else if (status === 'failed') {
+            setError(lang === 'RU' ? 'Оплата не прошла.' : 'Payment failed.');
+          }
+        });
+      } else {
+        window.open(data.url, '_blank', 'noopener,noreferrer');
+        setSuccess(lang === 'RU'
+          ? 'Счёт открыт. Premium активируется автоматически после оплаты.'
+          : 'Invoice opened. Premium activates automatically after payment.');
+        pollProStatus();
+      }
+    } catch {
+      setError(lang === 'RU' ? 'Не удалось создать счёт Stars. Попробуйте позже.' : 'Failed to create Stars invoice. Try again later.');
+    } finally {
+      setLoading(null);
+    }
+  };
+
   const handleCryptoPay = async () => {
     setError(null);
     setSuccess(null);
@@ -155,38 +247,6 @@ export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalPro
       }
     } catch {
       setError(lang === 'RU' ? 'Ошибка создания счёта. Попробуйте позже.' : 'Failed to create invoice. Try again later.');
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const handleChangelly = async () => {
-    setError(null);
-    setSuccess(null);
-    setLoading('changelly');
-    trackEvent('pro_upgrade_started', { method: 'changelly' });
-
-    try {
-      const walletAddress = tonConnectUI?.wallet?.account.address;
-      if (!walletAddress) {
-        tonConnectUI?.openModal();
-        setLoading(null);
-        return;
-      }
-
-      const res = await authFetch('/api/billing/changelly', {
-        method: 'POST',
-        body: JSON.stringify({ destination_address: walletAddress }),
-      });
-
-      if (!res.ok) throw new Error('changelly failed');
-
-      const data = await res.json();
-      if (data.url) {
-        window.open(data.url, '_blank', 'noopener,noreferrer');
-      }
-    } catch {
-      setError(lang === 'RU' ? 'Ошибка генерации ссылки обмена' : 'Failed to generate exchange link');
     } finally {
       setLoading(null);
     }
@@ -276,7 +336,7 @@ export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalPro
 
           {isMiniApp ? (
             <div className="w-full flex flex-col gap-2.5 mt-1">
-              {/* Primary CTA: TON Connect */}
+              {/* 1. Primary CTA: TON Connect */}
               <button
                 onClick={handleTonConnectPayment}
                 disabled={loading !== null}
@@ -288,16 +348,43 @@ export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalPro
                   <Wallet className="w-4 h-4 flex-shrink-0" />
                 )}
                 <div className="flex flex-col items-center leading-tight">
-                  <span className="font-bold text-sm">{translate(lang, 'paywall.tonConnect')} <span className="text-white/70 font-medium">({formatTon(pricing.price_ton)} TON)</span></span>
-                  <span className="text-[11px] text-white/75 font-medium">{`≤ ${formatUsdTarget(pricing.price_usd_target)} • rate locked twice daily`}</span>
+                  <span className="font-bold text-sm">
+                    {translate(lang, 'paywall.tonConnect')}{' '}
+                    <span className="text-white/75 font-medium">({formatTon(pricing.price_ton)} TON)</span>
+                  </span>
+                  <span className="text-[11px] text-white/80 font-medium">
+                    {`≤ ${formatUsdTarget(pricing.price_usd_target)} USD • rate locked twice daily`}
+                  </span>
                 </div>
               </button>
 
-              {/* Secondary CTA: Crypto Pay (outline) */}
+              {/* 2. Strong accent: Telegram Stars */}
+              <button
+                onClick={handleStarsPayment}
+                disabled={loading !== null}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#2AABEE] via-[#5B8DEF] to-[#7B61FF] text-white hover:brightness-110 transition-all shadow-[0_0_24px_rgba(91,141,239,0.45),0_0_8px_rgba(123,97,255,0.35)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2.5"
+              >
+                {loading === 'stars' ? (
+                  <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+                ) : (
+                  <Star className="w-4 h-4 flex-shrink-0 fill-white" />
+                )}
+                <div className="flex flex-col items-center leading-tight">
+                  <span className="font-bold text-sm">
+                    {translate(lang, 'paywall.stars')}{' '}
+                    <span className="text-white/85 font-medium">({PREMIUM_PRICE_STARS} ⭐)</span>
+                  </span>
+                  <span className="text-[11px] text-white/80 font-medium">
+                    {translate(lang, 'paywall.stars.hint')}
+                  </span>
+                </div>
+              </button>
+
+              {/* 3. Tertiary: Crypto Pay — transparent w/ neon outline */}
               <button
                 onClick={handleCryptoPay}
                 disabled={loading !== null}
-                className="w-full py-2.5 rounded-xl bg-transparent border border-emerald-400/50 text-emerald-300 hover:bg-emerald-400/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2.5"
+                className="w-full py-2.5 rounded-xl bg-transparent border border-emerald-300/60 text-emerald-200 hover:bg-emerald-400/10 hover:border-emerald-300/90 transition-all shadow-[inset_0_0_14px_rgba(52,211,153,0.10),0_0_18px_rgba(52,211,153,0.18)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2.5"
               >
                 {loading === 'crypto_pay' ? (
                   <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
@@ -305,10 +392,19 @@ export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalPro
                   <Bot className="w-4 h-4 flex-shrink-0" />
                 )}
                 <div className="flex flex-col items-center leading-tight">
-                  <span className="font-bold text-sm">{translate(lang, 'paywall.cryptoPay')} <span className="text-emerald-300/70 font-medium">({formatUsdTarget(pricing.price_usd_target)})</span></span>
-                  <span className="text-[11px] text-emerald-300/70 font-medium">{`invoice priced in USD • pay in TON`}</span>
+                  <span className="font-bold text-sm">
+                    {translate(lang, 'paywall.cryptoPay')}{' '}
+                    <span className="text-emerald-200/75 font-medium">({formatUsdTarget(pricing.price_usd_target)} USD)</span>
+                  </span>
+                  <span className="text-[11px] text-emerald-200/75 font-medium">
+                    {translate(lang, 'paywall.cryptoPay.hint')}
+                  </span>
                 </div>
               </button>
+
+              <p className="text-[10px] text-white/40 tracking-wide mt-1">
+                {translate(lang, 'paywall.referralHint')}
+              </p>
             </div>
           ) : (
             <a
@@ -320,18 +416,6 @@ export function PaywallModal({ open, onClose, lang, isMiniApp }: PaywallModalPro
               {translate(lang, 'paywall.desktop.launch')}
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
-          )}
-
-          {/* Muted text links at bottom */}
-          {isMiniApp && (
-            <button
-              onClick={handleChangelly}
-              disabled={loading !== null}
-              className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/55 hover:border-white/20 hover:bg-white/[0.08] hover:text-white/80 transition-colors flex items-center gap-1.5 disabled:opacity-50"
-            >
-              {loading === 'changelly' && <Loader2 className="w-3 h-3 animate-spin" />}
-              {translate(lang, 'paywall.changelly')}
-            </button>
           )}
 
           <button

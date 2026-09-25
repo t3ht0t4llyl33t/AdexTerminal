@@ -1,11 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getSupabase } from '@/lib/supabase-server';
 import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
+import { privateNoStore } from '@/lib/edge-cache';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 const BOT_LINK = 'https://t.me/aDEX_Live_Support_bot';
+const MINIAPP_LINK = 'https://t.me/aDEX_Live_Support_bot/miniapp';
 
 function generateCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -48,11 +50,13 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabase();
     const referralCode = await getOrCreateCode(supabase, String(tgUserId));
-    const referralLink = `${BOT_LINK}?start=${referralCode}`;
+    const referralLink = `${MINIAPP_LINK}?startapp=${referralCode}`;
+    const referralLinkFallback = `${BOT_LINK}?start=${referralCode}`;
 
     let totalReferrals = 0;
     let totalEarnings = 0;
     let pendingPayouts = 0;
+    let totalStars = 0;
 
     if (supabase) {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -67,7 +71,7 @@ export async function POST(req: NextRequest) {
 
       const { data: payouts } = await supabase
         .from('referral_payouts')
-        .select('commission_usd, status, created_at')
+        .select('commission_usd, commission_stars, payment_method, status, created_at')
         .eq('referrer_tg_id', String(tgUserId))
         .gte('created_at', thirtyDaysAgo);
 
@@ -79,6 +83,9 @@ export async function POST(req: NextRequest) {
         pendingPayouts = payouts
           .filter((p) => p.status === 'pending' || p.status === 'failed')
           .reduce((sum, p) => sum + (Number(p.commission_usd) || 0), 0);
+        totalStars = payouts
+          .filter((p) => p.payment_method === 'stars')
+          .reduce((sum, p) => sum + (Number(p.commission_stars) || 0), 0);
       }
 
       const { data: escrow } = await supabase
@@ -123,15 +130,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    return privateNoStore({
       ok: true,
       stats: {
         totalReferrals,
         activeReferrals: totalReferrals,
         totalEarnings: Number(totalEarnings.toFixed(2)),
         pendingPayouts: Number(pendingPayouts.toFixed(2)),
+        totalStars,
         referralCode,
         referralLink,
+        referralLinkFallback,
         tier: totalReferrals >= 50 ? 'Platinum Partner' : totalReferrals >= 20 ? 'Gold Partner' : totalReferrals >= 5 ? 'Silver Partner' : 'New Partner',
         commissionRate: 20,
         isPro,
@@ -139,6 +148,6 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error('[referral-stats] Error:', err);
-    return NextResponse.json({ ok: false, error: 'server_error' }, { status: 500 });
+    return privateNoStore({ ok: false, error: 'server_error' }, 500);
   }
 }

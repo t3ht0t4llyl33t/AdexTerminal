@@ -1,11 +1,9 @@
 import { NextRequest } from 'next/server';
 import { fetchRadarData } from '@/selectors/apiConfig';
-import { cachedJson } from '@/lib/edge-cache';
+import { cachedJson, PUBLIC_READ_CACHE } from '@/lib/edge-cache';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-const CACHE_OPTS = { sMaxAge: 30, swr: 120 };
 
 export async function GET(req: NextRequest) {
   try {
@@ -19,7 +17,7 @@ export async function GET(req: NextRequest) {
         source: data.source,
         whales: data.whales,
       },
-      CACHE_OPTS,
+      PUBLIC_READ_CACHE,
       'live',
     );
   } catch (err) {
@@ -27,7 +25,7 @@ export async function GET(req: NextRequest) {
     return cachedJson(
       req,
       { data: [], cached: true, timestamp: Date.now(), source: 'cache' },
-      { ...CACHE_OPTS, staleReason: 'upstream_failed' },
+      { ...PUBLIC_READ_CACHE, staleReason: 'upstream_failed' },
       'fallback',
     );
   }

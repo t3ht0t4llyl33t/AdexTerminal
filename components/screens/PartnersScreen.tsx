@@ -198,15 +198,17 @@ export function PartnersScreen({ stats: initialStats, lang }: PartnersScreenProp
       border: 'border-fuchsia-400/30',
       shadow: 'shadow-[0_0_16px_rgba(192,38,211,0.12)]',
       hint: undefined as string | undefined,
+      subValue: undefined as string | undefined,
     },
     {
       icon: DollarSign,
       label: translate(lang, 'partners.earnedRewards'),
-      value: `${liveStats.totalEarnings.toFixed(2)}`,
+      value: `${liveStats.totalEarnings.toFixed(2)} USD`,
       color: 'text-emerald-300',
       border: 'border-emerald-400/30',
       shadow: 'shadow-[0_0_16px_rgba(52,211,153,0.12)]',
       hint: translate(lang, 'partners.earnedRewardsHint'),
+      subValue: liveStats.totalStars > 0 ? `+ ${liveStats.totalStars} \u2b50` : undefined,
     },
   ];
 
@@ -396,8 +398,15 @@ export function PartnersScreen({ stats: initialStats, lang }: PartnersScreenProp
                 )}
               </div>
             </div>
-            <span className={cn('flex-shrink-0 text-base sm:text-lg font-mono font-bold leading-[1.25]', stat.color)}>
-              {stat.value}
+            <span className={cn('flex-shrink-0 flex flex-col items-end text-right leading-[1.15]', stat.color)}>
+              <span className="text-base sm:text-lg font-mono font-bold">
+                {stat.value}
+              </span>
+              {stat.subValue && (
+                <span className="text-[10px] font-mono text-amber-300/85 mt-0.5">
+                  {stat.subValue}
+                </span>
+              )}
             </span>
           </div>
         ))}

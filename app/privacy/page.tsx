@@ -16,7 +16,7 @@ export default function PrivacyPage() {
             aDEX Terminal
           </span>
           <h1 className="text-2xl font-black tracking-tight">Privacy Policy</h1>
-          <p className="text-xs text-white/40">Last updated: 18 September 2026</p>
+          <p className="text-xs text-white/40">Last updated: 25 September 2026</p>
         </div>
 
         <p className="text-sm text-white/70">
@@ -71,22 +71,47 @@ export default function PrivacyPage() {
           <h2 className="text-sm font-bold uppercase tracking-wide text-white">4. Payments</h2>
           <p className="text-sm text-white/65">
             When you pay for Pro, the transaction happens directly on the TON blockchain via TON
-            Connect or Crypto Pay. We record the transaction hash and amount for activation. Card
-            payments are not accepted.
+            Connect, Telegram Stars, or Crypto Pay. We record the transaction hash and amount for
+            activation. Card payments are not accepted.
           </p>
         </section>
 
         <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-white">5. Retention</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-white">5. Affiliate &amp; referral commissions</h2>
           <p className="text-sm text-white/65">
-            Cached market data is retained for at most 3 days. Payment records are retained as
-            long as required for accounting. Alert configurations remain until you delete them.
-            Anonymised desktop-visit counters are retained for 90 days.
+            Some third-party services linked from the terminal — for example the Maestro trading
+            bot — are reached through our referral link. When you sign up or transact via that
+            link, aDEX Terminal may receive a commission from the provider at no extra cost to you.
+            This never affects the price you pay and never grants us access to your wallet or funds.
+          </p>
+          <p className="text-sm text-white/65">
+            The in-app referral program works the same way: when another user unlocks Pro using your
+            referral code, you receive 20% of their payment. Commissions are paid out through TON
+            Connect to a wallet you control.
           </p>
         </section>
 
         <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-white">6. Your rights</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-white">6. Retention</h2>
+          <p className="text-sm text-white/65">
+            Data lives only as long as it is useful. Automated database jobs prune older rows on a
+            fixed schedule so nothing accumulates indefinitely.
+          </p>
+          <ul className="text-sm text-white/65 list-disc pl-5 flex flex-col gap-1.5 mt-1">
+            <li>Contract scan cache — up to 3 days.</li>
+            <li>Scheduled-job journal (cron runs) — up to 30 days.</li>
+            <li>Session audit log — up to 90 days.</li>
+            <li>Product analytics events — up to 90 days.</li>
+            <li>Rate-limit buckets — pruned 30 days after your last activity.</li>
+            <li>Payment records — up to 365 days (retained for accounting).</li>
+            <li>Referral payout records — up to 365 days (retained for accounting).</li>
+            <li>Anonymised desktop-visit counters — up to 90 days.</li>
+            <li>Alert configurations and Pro settings — kept until you change or delete them.</li>
+          </ul>
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-white">7. Your rights</h2>
           <p className="text-sm text-white/65">
             You can request a copy or deletion of any data associated with your Telegram ID by
             contacting support. Deletion requests are processed within 14 days, except for payment
@@ -95,7 +120,7 @@ export default function PrivacyPage() {
         </section>
 
         <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-white">7. Contact</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-white">8. Contact</h2>
           <p className="text-sm text-white/65">
             Privacy requests:{' '}
             <a

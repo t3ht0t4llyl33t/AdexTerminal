@@ -11,7 +11,6 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
-  Cpu,
   Link2,
   Zap,
   FileSearch,
@@ -31,8 +30,10 @@ import { RiskAdvisory } from '@/components/shared/RiskAdvisory';
 import { NetworkSwitcher } from '@/components/shared/NetworkSwitcher';
 import { formatAddress } from '@/components/shared/Format';
 import { cn } from '@/lib/utils';
-import { buildTradeLink, DEFAULT_TRADE_SETTINGS, type TradeSettings } from '@/lib/trade-links';
+import { buildTradeLink, openTradeLink, isValidTokenAddressAny, DEFAULT_TRADE_SETTINGS, type TradeSettings } from '@/lib/trade-links';
+import { useInvalidAddressToast } from '@/components/shared/InvalidAddressToast';
 import { trackEvent } from '@/lib/product-events';
+import { ReportTokenModal } from '@/components/shared/ReportTokenModal';
 
 interface ScannerScreenProps {
   scans: SecurityScan[];
@@ -66,6 +67,9 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
   const [bonusMessage, setBonusMessage] = useState<string | null>(null);
   const [scanHistory, setScanHistory] = useState<SecurityScan[]>([]);
   const [tradeSettings, setTradeSettings] = useState<TradeSettings>(DEFAULT_TRADE_SETTINGS);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [reportedTokens, setReportedTokens] = useState<Set<string>>(new Set());
+  const invalidToast = useInvalidAddressToast(lang);
 
   const refreshHistory = () => {
     authFetch('/api/scanner')
@@ -98,6 +102,11 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
 
   const handleScan = async () => {
     if (!searchInput.trim() || searchInput.trim().length < 10) return;
+    if (!isValidTokenAddressAny(searchInput.trim())) {
+      invalidToast.notify();
+      setError(translate(lang, 'common.invalidAddress'));
+      return;
+    }
     setScanning(true);
     setError(null);
     setBonusMessage(null);
@@ -796,11 +805,11 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
             )}
           </div>
 
-          {/* Apex AI Verdict Terminal */}
+          {/* Risk Assessment Terminal */}
           <div className={cn('p-4 border border-fuchsia-400/25 bg-[#0b0a1f]/80 rounded-2xl shadow-[0_0_22px_rgba(192,38,211,0.12)]')}>
             <div className="flex items-center gap-2 mb-3">
               <div className="w-8 h-8 rounded-xl bg-fuchsia-400/10 border border-fuchsia-400/30 flex items-center justify-center shadow-[0_0_10px_rgba(192,38,211,0.2)]">
-                <Cpu className="w-4 h-4 text-fuchsia-200" />
+                <ShieldCheck className="w-4 h-4 text-fuchsia-200" />
               </div>
               <span className="text-xs font-mono text-fuchsia-200 uppercase tracking-wider font-bold">
                 {translate(lang, 'scanner.apexAiLabel')}
@@ -814,16 +823,40 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
             </div>
             {/* Trade button — shown for non-danger verdicts */}
             {!displayScan.honeypot && displayScan.riskScore < 60 && (
-              <a
-                href={buildTradeLink(displayScan.network, displayScan.address, tradeSettings)}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                onClick={() => {
+                  const link = buildTradeLink(displayScan.network, displayScan.address, tradeSettings);
+                  if (link) openTradeLink(link);
+                  else invalidToast.notify();
+                }}
                 className="mt-3 w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-300/50 text-emerald-100 text-sm font-bold hover:from-emerald-500/30 hover:to-teal-500/30 hover:border-emerald-300/70 transition-all shadow-[0_0_18px_rgba(52,211,153,0.2)]"
               >
                 <TrendingUp className="w-4 h-4" />
                 {lang === 'RU' ? 'Торговать' : 'Trade'} {displayScan.tokenSymbol !== 'UNKNOWN' ? `${displayScan.tokenSymbol}` : ''}
-              </a>
+              </button>
             )}
+            {/* Report button — shown for red verdicts */}
+            {(displayScan.honeypot || displayScan.riskScore >= 60) && (() => {
+              const tokenKey = `${displayScan.network}:${displayScan.address.toLowerCase()}`;
+              const alreadyReported = reportedTokens.has(tokenKey);
+              return (
+                <button
+                  onClick={() => setReportModalOpen(true)}
+                  disabled={alreadyReported}
+                  className={cn(
+                    'mt-3 w-full flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-bold transition-all',
+                    alreadyReported
+                      ? 'bg-white/[0.03] border-white/10 text-white/40 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-red-500/20 to-orange-500/20 border-red-300/50 text-red-100 hover:from-red-500/30 hover:to-orange-500/30 hover:border-red-300/70 shadow-[0_0_18px_rgba(239,68,68,0.15)]',
+                  )}
+                >
+                  <ShieldAlert className="w-4 h-4" />
+                  {alreadyReported
+                    ? (lang === 'RU' ? 'Жалоба отправлена' : 'Report submitted')
+                    : (lang === 'RU' ? 'Пожаловаться на токен' : 'Report this token')}
+                </button>
+              );
+            })()}
           </div>
 
           {/* Dev Cluster Visualizer */}
@@ -987,6 +1020,26 @@ export function ScannerScreen({ scans, lang, networks, onNetworksChange }: Scann
             </div>
           </div>
         </div>
+      )}
+      {invalidToast.element}
+      {audit && (
+        <ReportTokenModal
+          open={reportModalOpen}
+          onClose={() => setReportModalOpen(false)}
+          lang={lang}
+          network={audit.scan.network}
+          address={audit.scan.address}
+          tokenSymbol={audit.scan.tokenSymbol}
+          riskScore={audit.scan.riskScore}
+          onSuccess={() => {
+            const key = `${audit.scan.network}:${audit.scan.address.toLowerCase()}`;
+            setReportedTokens((prev) => {
+              const next = new Set(prev);
+              next.add(key);
+              return next;
+            });
+          }}
+        />
       )}
     </div>
   );

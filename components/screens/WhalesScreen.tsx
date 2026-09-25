@@ -22,7 +22,8 @@ import { NetworkSwitcher } from '@/components/shared/NetworkSwitcher';
 import { WhalePositionModal } from '@/components/shared/WhalePositionModal';
 import { formatTimeAgo, formatAddress } from '@/components/shared/Format';
 import { cn } from '@/lib/utils';
-import { buildTradeLink, type TradeSettings, DEFAULT_TRADE_SETTINGS } from '@/lib/trade-links';
+import { buildTradeLink, openTradeLink, isValidTokenAddress, type TradeSettings, DEFAULT_TRADE_SETTINGS } from '@/lib/trade-links';
+import { useInvalidAddressToast } from '@/components/shared/InvalidAddressToast';
 
 interface WhalesScreenProps {
   whales: WhaleAlert[];
@@ -36,7 +37,7 @@ interface WhalesScreenProps {
   onProSettingsChange?: (settings: Partial<ProSettings>) => void;
 }
 
-function buildMirrorLink(whale: WhaleAlert, settings: TradeSettings = DEFAULT_TRADE_SETTINGS): string {
+function buildMirrorLink(whale: WhaleAlert, settings: TradeSettings = DEFAULT_TRADE_SETTINGS): string | null {
   return buildTradeLink(whale.network, whale.tokenAddress, settings);
 }
 
@@ -81,6 +82,7 @@ export function WhalesScreen({ whales, lang, networks, onNetworksChange, isPro, 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [snapshotWhale, setSnapshotWhale] = useState<WhaleAlert | null>(null);
   const [snapshotOpen, setSnapshotOpen] = useState(false);
+  const invalidToast = useInvalidAddressToast(lang);
   const minimumVolume = proSettings?.whale_min_volume ?? 3000;
   const buysOnly = proSettings?.whale_buys_only ?? false;
   const filtered = whales
@@ -382,15 +384,13 @@ export function WhalesScreen({ whales, lang, networks, onNetworksChange, isPro, 
                         {formatTimestamp(whale.timestamp, lang)}
                       </span>
                     </div>
-                    <a
-                      href={mirrorLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      onClick={() => { if (!mirrorLink) { invalidToast.notify(); return; } openTradeLink(mirrorLink); }}
                       className="inline-flex items-center justify-center gap-2 min-w-[170px] px-5 py-3 rounded-xl bg-emerald-400 text-[#02130b] text-sm font-bold transition-all whitespace-nowrap hover:bg-emerald-300 hover:scale-[1.02] shadow-[0_0_22px_rgba(52,211,153,0.45)]"
                     >
                       <Copy className="w-4 h-4" />
                       {translate(lang, 'whales.mirrorTrade')}
-                    </a>
+                    </button>
                   </div>
                 </div>
 
@@ -400,15 +400,13 @@ export function WhalesScreen({ whales, lang, networks, onNetworksChange, isPro, 
                       {formatTimestamp(whale.timestamp, lang)}
                     </span>
                   </div>
-                  <a
-                    href={mirrorLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={() => { if (!mirrorLink) { invalidToast.notify(); return; } openTradeLink(mirrorLink); }}
                     className="inline-flex flex-1 items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-400 text-[#02130b] text-[11px] font-bold hover:bg-emerald-300 transition-all shadow-[0_0_14px_rgba(52,211,153,0.4)]"
                   >
                     <Copy className="w-3 h-3" />
                     {translate(lang, 'whales.mirrorTrade')}
-                  </a>
+                  </button>
                 </div>
               </div>
             );
@@ -427,6 +425,7 @@ export function WhalesScreen({ whales, lang, networks, onNetworksChange, isPro, 
         onUpgrade={onUpgrade}
         tradeSettings={tradeSettings}
       />
+      {invalidToast.element}
     </div>
   );
 }

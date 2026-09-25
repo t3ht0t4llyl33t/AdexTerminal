@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
+import { privateNoStore } from '@/lib/edge-cache';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -16,7 +17,7 @@ function getSupabaseAdmin() {
 }
 
 const VALID_TON = ['dedust', 'stonfi'] as const;
-const VALID_EVM = ['banana', 'maestro'] as const;
+const VALID_EVM = ['maestro'] as const;
 
 export async function POST(req: NextRequest) {
   try {
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
 
     if (action === 'save') {
       const tonService = VALID_TON.includes(body.ton_service) ? body.ton_service : 'dedust';
-      const evmService = VALID_EVM.includes(body.evm_service) ? body.evm_service : 'banana';
+      const evmService = VALID_EVM.includes(body.evm_service) ? body.evm_service : 'maestro';
 
       if (supabase) {
         const { error } = await supabase
@@ -48,14 +49,14 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return NextResponse.json({
+      return privateNoStore({
         ok: true,
         settings: { ton_service: tonService, evm_service: evmService },
       });
     }
 
     let tonService = 'dedust';
-    let evmService = 'banana';
+    let evmService = 'maestro';
 
     if (supabase) {
       const { data } = await supabase
@@ -66,16 +67,16 @@ export async function POST(req: NextRequest) {
 
       if (data) {
         tonService = data.ton_service || 'dedust';
-        evmService = data.evm_service || 'banana';
+        evmService = data.evm_service || 'maestro';
       }
     }
 
-    return NextResponse.json({
+    return privateNoStore({
       ok: true,
       settings: { ton_service: tonService, evm_service: evmService },
     });
   } catch (err) {
     console.error('[trade-settings] Error:', err);
-    return NextResponse.json({ ok: false, error: 'server_error' }, { status: 500 });
+    return privateNoStore({ ok: false, error: 'server_error' }, 500);
   }
 }

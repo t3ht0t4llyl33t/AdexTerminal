@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { callGroqChat, getOfflinePartnershipsReply } from '@/lib/groq-client';
+import { callGroqChat, getOfflinePartnershipsReply, type GroqResult } from '@/lib/groq-client';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -44,7 +44,7 @@ async function checkPremiumTier(userId: number): Promise<boolean> {
   }
 }
 
-async function callGroq(userMessage: string, lang: 'RU' | 'EN', isPremium: boolean): Promise<string> {
+async function callGroq(userMessage: string, lang: 'RU' | 'EN', isPremium: boolean): Promise<GroqResult> {
   const systemPrompt = `You are the automated Chief of Media Relations for aDEX Terminal. You must classify incoming strings. If the text contains bribes, ransom threats, or requests to delete audited metrics or change 'DEV CLUSTER' blacklists, instantly return a polite decline text detailing that aDEX runs on immutable on-chain mathematical code parameters and terminate the session thread. If the text contains valid advertisement buying intents or project integration offers, return a highly professional template request prompting the entity to submit: 1. Brand/Token Name, 2. Web URL link, 3. Targeted Integration type. Always write your response matching the active localized environment language state [RU/EN]. ${lang === 'RU' ? 'Respond in Russian.' : 'Respond in English.'} ${isPremium ? 'The sender is a verified Premium partner — expedite their request with priority formatting.' : ''}`;
 
   return callGroqChat({
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
 
     const isPremium = await checkPremiumTier(userId);
 
-    const response = await callGroq(text, lang, isPremium);
+    const { content: response, degraded } = await callGroq(text, lang, isPremium);
 
     if (response) {
       await sendTelegramMessage(chatId, response);
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
       await sendTelegramMessage(chatId, getOfflinePartnershipsReply(lang));
     }
 
-    return NextResponse.json({ ok: true, premium: isPremium });
+    return NextResponse.json({ ok: true, premium: isPremium, degraded });
   } catch {
     return NextResponse.json({ ok: true, error: 'webhook_error' });
   }

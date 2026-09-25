@@ -7,7 +7,8 @@ import { translate } from '@/lib/i18n';
 import { CopyButton } from '@/components/shared/CopyButton';
 import { formatAddress } from '@/components/shared/Format';
 import { cn } from '@/lib/utils';
-import { buildTradeLink, type TradeSettings, DEFAULT_TRADE_SETTINGS } from '@/lib/trade-links';
+import { buildTradeLink, openTradeLink, isValidTokenAddress, type TradeSettings, DEFAULT_TRADE_SETTINGS } from '@/lib/trade-links';
+import { useInvalidAddressToast } from '@/components/shared/InvalidAddressToast';
 import { authFetch } from '@/lib/api-client';
 
 interface WhalePositionModalProps {
@@ -47,6 +48,7 @@ export function WhalePositionModal({
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<PortfolioData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const invalidToast = useInvalidAddressToast(lang);
 
   const fetchPortfolio = useCallback(async () => {
     if (!whale) return;
@@ -191,15 +193,13 @@ export function WhalePositionModal({
           </div>
 
           <div className="flex gap-2 mt-4">
-            <a
-              href={mirrorLink}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => { if (!mirrorLink) { invalidToast.notify(); return; } openTradeLink(mirrorLink); }}
               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-emerald-400 text-[#02130b] text-sm font-bold transition-all hover:bg-emerald-300 hover:scale-[1.02] shadow-[0_0_18px_rgba(52,211,153,0.4)]"
             >
               <Copy className="w-4 h-4" />
               {translate(lang, 'whales.mirrorTrade')}
-            </a>
+            </button>
             <button
               onClick={onClose}
               className="px-4 py-3 rounded-xl border border-white/15 text-white/60 text-sm font-bold hover:bg-white/5 hover:text-white/90 transition-all"
@@ -209,6 +209,7 @@ export function WhalePositionModal({
           </div>
         </div>
       </div>
+      {invalidToast.element}
     </div>
   );
 }

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
+import { computeEtag, privateNoStore } from '@/lib/edge-cache';
+
+const PRIVATE_HEADERS = { 'Cache-Control': 'private, no-store', 'CDN-Cache-Control': 'no-store' };
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -60,7 +63,7 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseAdmin();
 
     if (!supabase) {
-      return NextResponse.json({ ok: true, alerts: [] });
+      return privateNoStore({ ok: true, alerts: [] });
     }
 
     const { data: row } = await supabase
@@ -90,19 +93,21 @@ export async function POST(req: NextRequest) {
     }>) : [];
 
     if (action === 'get') {
-      return NextResponse.json({ ok: true, alerts: currentAlerts });
+      const payload = { ok: true, alerts: currentAlerts };
+      const etag = computeEtag(payload);
+      if (req.headers.get('if-none-match') === etag) {
+        return new NextResponse(null, { status: 304, headers: { ETag: etag, ...PRIVATE_HEADERS } });
+      }
+      return NextResponse.json(payload, { headers: { ETag: etag, ...PRIVATE_HEADERS } });
     }
 
     if (action === 'save') {
       if (currentAlerts.length >= MAX_ALERTS) {
-        return NextResponse.json(
-          { ok: false, error: 'max_alerts_reached', limit: MAX_ALERTS },
-          { status: 400 },
-        );
+        return privateNoStore({ ok: false, error: 'max_alerts_reached', limit: MAX_ALERTS }, 400);
       }
       const validated = validateAlert(body);
       if (!validated) {
-        return NextResponse.json({ ok: false, error: 'invalid_alert' }, { status: 400 });
+        return privateNoStore({ ok: false, error: 'invalid_alert' }, 400);
       }
       const newAlert = {
         id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -120,9 +125,9 @@ export async function POST(req: NextRequest) {
         }, { onConflict: 'telegram_user_id' });
       if (error) {
         console.error('[alerts] save error:', error);
-        return NextResponse.json({ ok: false, error: 'server_error' }, { status: 500 });
+        return privateNoStore({ ok: false, error: 'server_error' }, 500);
       }
-      return NextResponse.json({ ok: true, alerts: updated });
+      return privateNoStore({ ok: true, alerts: updated });
     }
 
     if (action === 'delete') {
@@ -137,9 +142,9 @@ export async function POST(req: NextRequest) {
         }, { onConflict: 'telegram_user_id' });
       if (error) {
         console.error('[alerts] delete error:', error);
-        return NextResponse.json({ ok: false, error: 'server_error' }, { status: 500 });
+        return privateNoStore({ ok: false, error: 'server_error' }, 500);
       }
-      return NextResponse.json({ ok: true, alerts: updated });
+      return privateNoStore({ ok: true, alerts: updated });
     }
 
     if (action === 'toggle') {
@@ -156,14 +161,14 @@ export async function POST(req: NextRequest) {
         }, { onConflict: 'telegram_user_id' });
       if (error) {
         console.error('[alerts] toggle error:', error);
-        return NextResponse.json({ ok: false, error: 'server_error' }, { status: 500 });
+        return privateNoStore({ ok: false, error: 'server_error' }, 500);
       }
-      return NextResponse.json({ ok: true, alerts: updated });
+      return privateNoStore({ ok: true, alerts: updated });
     }
 
-    return NextResponse.json({ ok: true, alerts: currentAlerts });
+    return privateNoStore({ ok: true, alerts: currentAlerts });
   } catch (err) {
     console.error('[alerts] Error:', err);
-    return NextResponse.json({ ok: false, error: 'server_error' }, { status: 500 });
+    return privateNoStore({ ok: false, error: 'server_error' }, 500);
   }
 }

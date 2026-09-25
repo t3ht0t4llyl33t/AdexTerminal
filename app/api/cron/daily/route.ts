@@ -3,6 +3,7 @@ import { authorizeCronRequest, lastSuccessAt, runSubtask } from '@/lib/cron-runn
 import {
   runDailyDigest,
   runDailyMetricsSnapshot,
+  runDataRetentionCleanup,
   runRefreshTonPrice,
   runSubscriptionCheck,
 } from '@/lib/cron-subtasks';
@@ -29,11 +30,12 @@ export async function GET(req: NextRequest) {
   const startedIso = new Date().toISOString();
   const now = new Date();
 
-  const [priceLast, subLast, digestLast, metricsLast] = await Promise.all([
+  const [priceLast, subLast, digestLast, metricsLast, cleanupLast] = await Promise.all([
     lastSuccessAt('refresh-ton-price'),
     lastSuccessAt('subscription-check'),
     lastSuccessAt('daily-digest'),
     lastSuccessAt('daily-metrics-snapshot'),
+    lastSuccessAt('data-retention-cleanup'),
   ]);
 
   const priceDue =
@@ -41,6 +43,7 @@ export async function GET(req: NextRequest) {
   const subDue = !subLast || !sameUtcDay(subLast, now);
   const digestDue = !digestLast || !sameUtcDay(digestLast, now);
   const metricsDue = !metricsLast || !sameUtcDay(metricsLast, now);
+  const cleanupDue = !cleanupLast || !sameUtcDay(cleanupLast, now);
 
   const priceResult = priceDue
     ? await runSubtask({ jobName: 'refresh-ton-price', run: runRefreshTonPrice })
@@ -58,6 +61,10 @@ export async function GET(req: NextRequest) {
     ? await runSubtask({ jobName: 'daily-digest', run: runDailyDigest })
     : { status: 'skipped' as const };
 
+  const cleanupResult = cleanupDue
+    ? await runSubtask({ jobName: 'data-retention-cleanup', run: runDataRetentionCleanup })
+    : { status: 'skipped' as const };
+
   await runSubtask({
     jobName: 'daily',
     run: async () => ({
@@ -67,6 +74,7 @@ export async function GET(req: NextRequest) {
         daily_metrics_snapshot: metricsResult.status,
         subscription_check: subResult.status,
         daily_digest: digestResult.status,
+        data_retention_cleanup: cleanupResult.status,
       },
     }),
   });
@@ -79,6 +87,7 @@ export async function GET(req: NextRequest) {
       'daily-metrics-snapshot': metricsResult,
       'subscription-check': subResult,
       'daily-digest': digestResult,
+      'data-retention-cleanup': cleanupResult,
     },
   });
 }

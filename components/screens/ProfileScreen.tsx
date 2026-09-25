@@ -31,8 +31,8 @@ import {
   DEFAULT_TRADE_SETTINGS,
   TON_SERVICES,
   EVM_SERVICES,
-  getServiceUrl,
   getServiceBotUrl,
+  openTradeLink,
   type TradeSettings,
   type TonService,
   type EvmService,
@@ -168,24 +168,7 @@ export function ProfileScreen({
 
   const openServiceUrl = (isEvm: boolean) => {
     const url = getServiceBotUrl(tradeSettings, isEvm);
-    if (typeof window !== 'undefined') {
-      const tg = (window as unknown as {
-        Telegram?: {
-          WebApp?: {
-            openTelegramLink?: (url: string) => void;
-            openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
-          };
-        };
-      }).Telegram;
-      const isTelegramLink = url.startsWith('https://t.me/') || url.startsWith('tg://');
-      if (isTelegramLink && tg?.WebApp?.openTelegramLink) {
-        tg.WebApp.openTelegramLink(url);
-      } else if (!isTelegramLink && tg?.WebApp?.openLink) {
-        tg.WebApp.openLink(url);
-      } else {
-        window.open(url, '_blank');
-      }
-    }
+    openTradeLink(url);
   };
 
   useEffect(() => {
@@ -404,7 +387,7 @@ export function ProfileScreen({
           <div className="grid grid-cols-[auto_1fr_auto] gap-x-2.5 items-center">
             {/* Row 1: TON */}
             <div className="flex items-center gap-1.5 min-w-0 py-1 h-10">
-              <span className="text-sm flex-shrink-0">💎</span>
+              <img src="/icon-ton.svg" alt="TON" className="w-4 h-4 flex-shrink-0" />
               <div className="grid min-w-0 h-full grid-rows-[1fr_auto_1fr] items-center">
                 <div className="text-[11px] font-bold text-white truncate leading-tight">TON</div>
                 <div className="text-[8px] text-white/30 truncate leading-tight">{lang === 'RU' ? 'Web3-апп' : 'Web3 app'}</div>
@@ -466,11 +449,11 @@ export function ProfileScreen({
             {/* Row 2: BASE and BSC (stacked vertically) */}
             <div className="flex min-w-0 flex-col justify-center gap-0.5 py-0.5">
               <div className="flex items-center gap-1.5">
-                <span className="text-sm flex-shrink-0">🔵</span>
+                <img src="/icon-base.svg" alt="BASE" className="w-4 h-4 flex-shrink-0" />
                 <span className="text-[11px] font-bold text-white leading-tight">BASE</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="text-sm flex-shrink-0">🟡</span>
+                <img src="/icon-bsc.svg" alt="BSC" className="w-4 h-4 flex-shrink-0" />
                 <span className="text-[11px] font-bold text-white leading-tight">BSC</span>
               </div>
               <div className="pl-[26px] text-[8px] text-white/30 leading-tight">{lang === 'RU' ? 'Торговые боты' : 'Trade bots'}</div>

@@ -1,136 +1,39 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import type { Metadata } from 'next';
-import { Activity, Radar, Bell, Coins, CreditCard, Sparkles } from 'lucide-react';
-import { getSupabase } from '@/lib/supabase-server';
+import { Activity, Radar, Bell, Coins, CreditCard, Sparkles, RefreshCw } from 'lucide-react';
 
-export const metadata: Metadata = {
-  title: 'Status · aDEX Terminal',
-  description:
-    'Live operational status for every part of aDEX Terminal — radar refresh, alerts engine, price feed, subscriptions and payouts.',
+type HealthState = 'green' | 'yellow' | 'red';
+
+interface SourceHealth {
+  name: string;
+  state: HealthState;
+  lastSuccessIso: string | null;
+  lastErrorIso: string | null;
+  lastError: string | null;
+}
+
+interface HealthPayload {
+  ok: boolean;
+  updated_at: string;
+  sources: SourceHealth[];
+  overall: HealthState;
+}
+
+const POLL_INTERVAL = 60_000;
+
+const SERVICE_META: Record<string, { title: string; description: string; icon: typeof Activity }> = {
+  TonAPI: { title: 'TonAPI', description: 'TON jetton metadata, holders, and verification data.', icon: Radar },
+  GeckoTerminal: { title: 'GeckoTerminal', description: 'Liquidity pools and trending tokens for TON, BSC, Base.', icon: Activity },
+  GoPlus: { title: 'GoPlus Security', description: 'EVM contract audit signals for BSC and Base.', icon: Bell },
+  Groq: { title: 'Groq AI', description: 'AI support assistant and moderation engine.', icon: Sparkles },
+  Supabase: { title: 'Supabase', description: 'Database, auth, and edge function infrastructure.', icon: CreditCard },
 };
 
-export const revalidate = 60;
-export const dynamic = 'force-dynamic';
-
-type State = 'active' | 'syncing' | 'maintenance';
-
-interface ServiceRow {
-  key: string;
-  title: string;
-  description: string;
-  icon: typeof Activity;
-  jobName: string;
-  activeWithinMinutes: number;
-  syncingWithinMinutes: number;
-}
-
-const SERVICES: ServiceRow[] = [
-  {
-    key: 'radar',
-    title: 'Market Radar',
-    description: 'Volume spike scan across TON, BSC and Base.',
-    icon: Radar,
-    jobName: 'tick',
-    activeWithinMinutes: 10,
-    syncingWithinMinutes: 60,
-  },
-  {
-    key: 'alerts',
-    title: 'Alerts Engine',
-    description: 'Telegram delivery for spike and whale alerts.',
-    icon: Bell,
-    jobName: 'alert-check',
-    activeWithinMinutes: 15,
-    syncingWithinMinutes: 90,
-  },
-  {
-    key: 'price',
-    title: 'TON Price Feed',
-    description: 'Reference rate used for pricing and PRO checkout.',
-    icon: Coins,
-    jobName: 'refresh-ton-price',
-    activeWithinMinutes: 30,
-    syncingWithinMinutes: 180,
-  },
-  {
-    key: 'subscriptions',
-    title: 'Subscriptions',
-    description: 'PRO subscription lifecycle and expiration checks.',
-    icon: CreditCard,
-    jobName: 'subscription-check',
-    activeWithinMinutes: 90,
-    syncingWithinMinutes: 360,
-  },
-  {
-    key: 'payouts',
-    title: 'Referral Payouts',
-    description: 'Automated TON payouts from the highload wallet.',
-    icon: Sparkles,
-    jobName: 'highload-sweep',
-    activeWithinMinutes: 120,
-    syncingWithinMinutes: 720,
-  },
-];
-
-interface ServiceState {
-  key: string;
-  title: string;
-  description: string;
-  icon: typeof Activity;
-  state: State;
-  lastActivityIso: string | null;
-}
-
-async function loadStates(): Promise<ServiceState[]> {
-  try {
-    const supabase = getSupabase();
-    const now = Date.now();
-
-    const results = await Promise.all(
-      SERVICES.map(async (svc) => {
-        const { data } = await supabase
-          .from('cron_runs')
-          .select('started_at, status')
-          .eq('job_name', svc.jobName)
-          .eq('status', 'ok')
-          .order('started_at', { ascending: false })
-          .limit(1);
-
-        const last = data?.[0]?.started_at ?? null;
-        let state: State = 'maintenance';
-        if (last) {
-          const diffMin = (now - new Date(last).getTime()) / 60_000;
-          if (diffMin <= svc.activeWithinMinutes) state = 'active';
-          else if (diffMin <= svc.syncingWithinMinutes) state = 'syncing';
-        }
-
-        return {
-          key: svc.key,
-          title: svc.title,
-          description: svc.description,
-          icon: svc.icon,
-          state,
-          lastActivityIso: last,
-        } satisfies ServiceState;
-      })
-    );
-
-    return results;
-  } catch {
-    return SERVICES.map((svc) => ({
-      key: svc.key,
-      title: svc.title,
-      description: svc.description,
-      icon: svc.icon,
-      state: 'syncing' as State,
-      lastActivityIso: null,
-    }));
-  }
-}
-
 function formatRelative(iso: string | null): string {
-  if (!iso) return 'Preparing';
+  if (!iso) return 'No data';
   const diffMs = Date.now() - new Date(iso).getTime();
   if (diffMs < 60_000) return 'moments ago';
   const min = Math.round(diffMs / 60_000);
@@ -141,62 +44,84 @@ function formatRelative(iso: string | null): string {
   return `${days} d ago`;
 }
 
-function stateLabel(state: State): string {
-  if (state === 'active') return 'Active';
-  if (state === 'syncing') return 'Syncing';
-  return 'Maintenance';
+function stateLabel(state: HealthState): string {
+  if (state === 'green') return 'Operational';
+  if (state === 'yellow') return 'Degraded';
+  return 'Down';
 }
 
-function stateStyle(state: State): { dot: string; ring: string; text: string } {
-  if (state === 'active') {
+function stateStyle(state: HealthState): { dot: string; ring: string; text: string; border: string } {
+  if (state === 'green') {
     return {
       dot: 'bg-emerald-400',
       ring: 'ring-emerald-400/30',
       text: 'text-emerald-300',
+      border: 'border-emerald-400/20',
     };
   }
-  if (state === 'syncing') {
+  if (state === 'yellow') {
     return {
       dot: 'bg-amber-300',
       ring: 'ring-amber-300/30',
       text: 'text-amber-200',
+      border: 'border-amber-300/20',
     };
   }
   return {
-    dot: 'bg-sky-300',
-    ring: 'ring-sky-300/30',
-    text: 'text-sky-200',
+    dot: 'bg-red-400',
+    ring: 'ring-red-400/30',
+    text: 'text-red-300',
+    border: 'border-red-400/20',
   };
 }
 
-function overallState(states: ServiceState[]): State {
-  if (states.every((s) => s.state === 'active')) return 'active';
-  if (states.some((s) => s.state === 'maintenance')) return 'maintenance';
-  return 'syncing';
-}
-
-function overallHeadline(state: State): { title: string; body: string } {
-  if (state === 'active') {
+function overallHeadline(state: HealthState): { title: string; body: string } {
+  if (state === 'green') {
     return {
-      title: 'All systems active',
-      body: 'Every module of aDEX Terminal is responding on schedule.',
+      title: 'All systems operational',
+      body: 'Every data source is responding within its expected freshness window.',
     };
   }
-  if (state === 'syncing') {
+  if (state === 'yellow') {
     return {
-      title: 'Modules are syncing',
-      body: 'Data is refreshing in the background. The Mini App remains fully usable.',
+      title: 'Partial degradation',
+      body: 'One or more sources are slower than usual. The app remains usable with cached data.',
     };
   }
   return {
-    title: 'Scheduled maintenance',
-    body: 'A module is taking a maintenance window. The rest of the terminal is unaffected.',
+    title: 'Service disruption',
+    body: 'At least one data source is not responding. Some features may show stale or unavailable data.',
   };
 }
 
-export default async function StatusPage() {
-  const states = await loadStates();
-  const overall = overallState(states);
+export default function StatusPage() {
+  const [health, setHealth] = useState<HealthPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [lastPoll, setLastPoll] = useState<number>(Date.now());
+
+  const fetchHealth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/health', { cache: 'no-store' });
+      if (res.ok) {
+        const data = (await res.json()) as HealthPayload;
+        setHealth(data);
+      }
+    } catch {
+      // keep previous state
+    } finally {
+      setLoading(false);
+      setLastPoll(Date.now());
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchHealth();
+    const timer = setInterval(fetchHealth, POLL_INTERVAL);
+    return () => clearInterval(timer);
+  }, [fetchHealth]);
+
+  const overall = health?.overall ?? 'red';
+  const sources = health?.sources ?? [];
   const headline = overallHeadline(overall);
   const overallStyle = stateStyle(overall);
 
@@ -219,16 +144,22 @@ export default async function StatusPage() {
       </header>
 
       <main className="mx-auto max-w-4xl px-5 py-16">
-        <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[10px] font-mono uppercase tracking-[0.22em] text-white/60">
-          <Activity className="h-3 w-3" /> Live operational status
-        </span>
+        <div className="flex items-center justify-between">
+          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[10px] font-mono uppercase tracking-[0.22em] text-white/60">
+            <Activity className="h-3 w-3" /> Live operational status
+          </span>
+          <button
+            onClick={fetchHealth}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-white/60 hover:text-white hover:bg-white/[0.06] transition-all disabled:opacity-40"
+          >
+            <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
 
-        <div
-          className={`mt-6 flex items-start gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 ring-1 ${overallStyle.ring}`}
-        >
-          <span
-            className={`mt-1 inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-full ${overallStyle.dot} shadow-[0_0_10px_currentColor]`}
-          />
+        <div className={`mt-6 flex items-start gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 ring-1 ${overallStyle.ring}`}>
+          <span className={`mt-1 inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-full ${overallStyle.dot} shadow-[0_0_10px_currentColor]`} />
           <div>
             <h1 className="text-2xl font-black tracking-tight md:text-3xl">{headline.title}</h1>
             <p className="mt-2 text-sm leading-relaxed text-white/65">{headline.body}</p>
@@ -236,41 +167,51 @@ export default async function StatusPage() {
         </div>
 
         <section className="mt-10 space-y-3">
-          {states.map((s) => {
-            const style = stateStyle(s.state);
-            const Icon = s.icon;
-            return (
-              <div
-                key={s.key}
-                className="flex items-center justify-between gap-4 rounded-xl border border-white/8 bg-white/[0.02] p-5"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-white/[0.06] to-transparent ring-1 ring-white/10">
-                    <Icon className="h-4 w-4 text-white/80" strokeWidth={1.6} />
+          {sources.length === 0 && loading ? (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="h-5 w-5 animate-spin text-white/40" />
+            </div>
+          ) : (
+            sources.map((s) => {
+              const style = stateStyle(s.state);
+              const meta = SERVICE_META[s.name] ?? { title: s.name, description: '', icon: Activity };
+              const Icon = meta.icon;
+              return (
+                <div
+                  key={s.name}
+                  className={`flex items-center justify-between gap-4 rounded-xl border bg-white/[0.02] p-5 ${style.border}`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-white/[0.06] to-transparent ring-1 ring-white/10">
+                      <Icon className="h-4 w-4 text-white/80" strokeWidth={1.6} />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-bold text-white">{meta.title}</h2>
+                      <p className="mt-1 text-xs leading-relaxed text-white/50">{meta.description}</p>
+                      {s.state === 'red' && s.lastError && (
+                        <p className="mt-1 text-[10px] font-mono text-red-300/60 truncate max-w-xs">
+                          {s.lastError}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-sm font-bold text-white">{s.title}</h2>
-                    <p className="mt-1 text-xs leading-relaxed text-white/50">{s.description}</p>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className={`inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1 text-[11px] font-semibold ${style.text}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
+                      {stateLabel(s.state)}
+                    </span>
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-white/40">
+                      {formatRelative(s.lastSuccessIso)}
+                    </span>
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                  <span
-                    className={`inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1 text-[11px] font-semibold ${style.text}`}
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
-                    {stateLabel(s.state)}
-                  </span>
-                  <span className="text-[10px] font-mono uppercase tracking-widest text-white/40">
-                    {formatRelative(s.lastActivityIso)}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </section>
 
         <p className="mt-10 text-center text-xs text-white/45">
-          Status refreshes every minute. Times are shown relative to the last successful run.
+          Auto-refreshes every 60 seconds. Last checked {formatRelative(new Date(lastPoll).toISOString())}.
         </p>
       </main>
 

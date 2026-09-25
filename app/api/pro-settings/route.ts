@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireTelegramUser, unauthorized } from '@/lib/api-auth';
+import { privateNoStore } from '@/lib/edge-cache';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return NextResponse.json({
+      return privateNoStore({
         ok: true,
         settings: {
           radar_min_liquidity: radarMinLiquidity,
@@ -79,13 +80,13 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
 
       if (data) {
-        return NextResponse.json({ ok: true, settings: data });
+        return privateNoStore({ ok: true, settings: data });
       }
     }
 
-    return NextResponse.json({ ok: true, settings: DEFAULTS });
+    return privateNoStore({ ok: true, settings: DEFAULTS });
   } catch (err) {
     console.error('[pro-settings] Error:', err);
-    return NextResponse.json({ ok: false, error: 'server_error' }, { status: 500 });
+    return privateNoStore({ ok: false, error: 'server_error' }, 500);
   }
 }

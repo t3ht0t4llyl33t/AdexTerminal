@@ -27,6 +27,7 @@ import { DEFAULT_TRADE_SETTINGS, type TradeSettings } from '@/lib/trade-links';
 import { initTelegramWebApp, getTelegramUserIdUnsafe, getStartParamUnsafe } from '@/lib/telegram-webapp';
 import { trackEvent } from '@/lib/product-events';
 import { authFetch } from '@/lib/api-client';
+import { ErrorState } from '@/components/shared/ErrorState';
 import type { WatchlistKey } from '@/components/screens/RadarScreen';
 
 const DEFAULT_PRO_SETTINGS: ProSettings = {
@@ -76,6 +77,8 @@ export default function Home() {
   const [watchlist, setWatchlist] = useState<WatchlistKey[]>([]);
   const [watchlistLimit, setWatchlistLimit] = useState<number | null>(5);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
+  const [fetchTick, setFetchTick] = useState(0);
 
   const isMiniApp =
     typeof window !== 'undefined' &&
@@ -111,15 +114,22 @@ export default function Home() {
 
     const startParam = getStartParamUnsafe();
     if (startParam) {
-      authFetch('/api/scout-pass', {
-        method: 'POST',
-        body: JSON.stringify({ start_param: startParam }),
-      })
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data?.is_premium) setIsPro(true);
+      if (/^aDEX-[A-Z0-9]{4}$/.test(startParam)) {
+        authFetch('/api/referral/claim', {
+          method: 'POST',
+          body: JSON.stringify({ referral_code: startParam }),
+        }).catch(() => {});
+      } else {
+        authFetch('/api/scout-pass', {
+          method: 'POST',
+          body: JSON.stringify({ start_param: startParam }),
         })
-        .catch(() => {});
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data?.is_premium) setIsPro(true);
+          })
+          .catch(() => {});
+      }
     }
 
     authFetch('/api/referral-stats', {
@@ -197,6 +207,7 @@ export default function Home() {
   useEffect(() => {
     const controller = new AbortController();
     const etags: Record<string, string> = {};
+    void fetchTick; // re-trigger on retry
 
     const withEtag = (key: string): RequestInit => {
       const headers: Record<string, string> = { Accept: 'application/json' };
@@ -204,7 +215,94 @@ export default function Home() {
       return { signal: controller.signal, headers };
     };
 
+    const watchlistEtag = { current: '' };
+    const alertsEtag = { current: '' };
+
+    const watchlistKey = (w: { network: string; address: string }) =>
+      `${w.network}:${w.address.toLowerCase()}`;
+
+    const watchlistEqual = (a: WatchlistKey[], b: WatchlistKey[]) => {
+      if (a.length !== b.length) return false;
+      const sa = new Set(a.map(watchlistKey));
+      for (const w of b) if (!sa.has(watchlistKey(w))) return false;
+      return true;
+    };
+
+    const alertsEqual = (a: AlertConfig[], b: AlertConfig[]) => {
+      if (a.length !== b.length) return false;
+      const ma = new Map(a.map((al) => [al.id, al]));
+      for (const al of b) {
+        const ex = ma.get(al.id);
+        if (!ex) return false;
+        if (ex.enabled !== al.enabled || ex.threshold !== al.threshold) return false;
+        if (ex.type !== al.type || ex.label !== al.label) return false;
+        if (JSON.stringify(ex.networks) !== JSON.stringify(al.networks)) return false;
+      }
+      return true;
+    };
+
+    const fetchUserState = async () => {
+      if (!hasTelegramSession()) return;
+      try {
+        const [wlRes, alRes] = await Promise.allSettled([
+          authFetch('/api/watchlist', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'list' }),
+            headers: watchlistEtag.current
+              ? { 'If-None-Match': watchlistEtag.current }
+              : undefined,
+          }),
+          authFetch('/api/alerts', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'get' }),
+            headers: alertsEtag.current
+              ? { 'If-None-Match': alertsEtag.current }
+              : undefined,
+          }),
+        ]);
+
+        if (wlRes.status === 'fulfilled') {
+          const r = wlRes.value;
+          if (r.status === 304) return;
+          if (r.status === 200) {
+            const et = r.headers.get('etag');
+            if (et) watchlistEtag.current = et;
+            const json = await r.json();
+            if (json?.ok && Array.isArray(json.items)) {
+              const next = json.items.map(
+                (r: { network: string; token_address: string }) => ({
+                  network: r.network,
+                  address: r.token_address,
+                }),
+              );
+              setWatchlist((prev) =>
+                watchlistEqual(prev, next) ? prev : next,
+              );
+              setWatchlistLimit(json.limit ?? null);
+            }
+          }
+        }
+        if (alRes.status === 'fulfilled') {
+          const r = alRes.value;
+          if (r.status === 304) return;
+          if (r.status === 200) {
+            const et = r.headers.get('etag');
+            if (et) alertsEtag.current = et;
+            const json = await r.json();
+            if (json?.ok && Array.isArray(json.alerts)) {
+              setAlerts((prev) =>
+                alertsEqual(prev, json.alerts) ? prev : json.alerts,
+              );
+            }
+          }
+        }
+      } catch {
+        // keep previous state on fetch failure
+      }
+    };
+
     const fetchData = async () => {
+      let anyData = false;
       try {
         const [radarRes, whalesRes, scansRes] = await Promise.allSettled([
           fetch('/api/radar', withEtag('radar')),
@@ -221,6 +319,7 @@ export default function Home() {
             if (json.data && Array.isArray(json.data) && json.data.length > 0) {
               setTokens(json.data);
               setIsLive(json.source === 'live');
+              anyData = true;
             }
           }
         }
@@ -230,7 +329,10 @@ export default function Home() {
             const et = r.headers.get('etag');
             if (et) etags['whales'] = et;
             const json = await r.json();
-            if (json.data && Array.isArray(json.data)) setWhales(json.data);
+            if (json.data && Array.isArray(json.data)) {
+              setWhales(json.data);
+              anyData = true;
+            }
           }
         }
         if (scansRes.status === 'fulfilled') {
@@ -239,24 +341,29 @@ export default function Home() {
             const et = r.headers.get('etag');
             if (et) etags['scanner'] = et;
             const json = await r.json();
-            if (json.data && Array.isArray(json.data) && json.data.length > 0) setScans(json.data);
+            if (json.data && Array.isArray(json.data) && json.data.length > 0) {
+              setScans(json.data);
+              anyData = true;
+            }
           }
         }
       } catch {
         // keep previous data on fetch failure
       }
+      setFetchError(!anyData);
     };
 
     let timer: ReturnType<typeof setTimeout> | null = null;
     const jitteredDelay = () => 60_000 + Math.floor(Math.random() * 30_000) - 15_000;
     const schedule = () => {
       timer = setTimeout(async () => {
-        await fetchData();
+        await Promise.allSettled([fetchData(), fetchUserState()]);
         if (timer !== null) schedule();
       }, jitteredDelay());
     };
 
     fetchData();
+    fetchUserState();
     schedule();
 
     const handleVisibility = () => {
@@ -267,6 +374,7 @@ export default function Home() {
         }
       } else if (!timer) {
         fetchData();
+        fetchUserState();
         schedule();
       }
     };
@@ -297,7 +405,7 @@ export default function Home() {
       }
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, []);
+  }, [fetchTick]);
 
   const toggleLang = useCallback(() => {
     setLang((l) => (l === 'EN' ? 'RU' : 'EN'));
@@ -443,6 +551,11 @@ export default function Home() {
     trackEvent('paywall_shown', { source: 'upgrade_cta' });
   }, []);
 
+  const handleRetryFetch = useCallback(() => {
+    setFetchError(false);
+    setFetchTick((t) => t + 1);
+  }, []);
+
   return (
     <TonConnectUIProvider manifestUrl="https://adexterminal.com/tonconnect-manifest.json">
       <div className="w-full h-screen h-[100dvh] flex flex-col overflow-hidden select-none bg-[#0B0B0F] text-white">
@@ -460,6 +573,9 @@ export default function Home() {
           <main className="flex-grow overflow-hidden flex flex-col min-h-0">
             <div className="flex-grow overflow-hidden min-h-0 flex flex-col">
               {activeTab === 'radar' && (
+                fetchError && tokens.length === 0 ? (
+                  <ErrorState lang={lang} onRetry={handleRetryFetch} />
+                ) : (
                 <RadarScreen
                   tokens={tokens}
                   lang={lang}
@@ -474,8 +590,12 @@ export default function Home() {
                   watchlistLimit={watchlistLimit}
                   onToggleWatch={handleToggleWatch}
                 />
+                )
               )}
               {activeTab === 'whales' && (
+                fetchError && whales.length === 0 ? (
+                  <ErrorState lang={lang} onRetry={handleRetryFetch} />
+                ) : (
                 <WhalesScreen
                   whales={whales}
                   lang={lang}
@@ -487,14 +607,19 @@ export default function Home() {
                   proSettings={proSettings}
                   onProSettingsChange={handleProSettingsChange}
                 />
+                )
               )}
               {activeTab === 'scanner' && (
+                fetchError && scans.length === 0 ? (
+                  <ErrorState lang={lang} onRetry={handleRetryFetch} />
+                ) : (
                 <ScannerScreen
                   scans={scans}
                   lang={lang}
                   networks={selectedNetworks}
                   onNetworksChange={setSelectedNetworks}
                 />
+                )
               )}
               {activeTab === 'profile' && (
                 <ProfileScreen
@@ -515,8 +640,10 @@ export default function Home() {
                     activeReferrals: 0,
                     totalEarnings: 0,
                     pendingPayouts: 0,
+                    totalStars: 0,
                     referralCode: '',
                     referralLink: '',
+                    referralLinkFallback: '',
                     tier: 'New Partner',
                     commissionRate: 20,
                     isPro,

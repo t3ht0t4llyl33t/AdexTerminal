@@ -14,6 +14,9 @@ export function RiskAdvisory({ lang }: { lang: Language }) {
           <p className="text-[11px] leading-relaxed text-white/45 font-mono">
             {translate(lang, 'risk.advisory')}
           </p>
+          <p className="mt-1.5 text-[10px] leading-relaxed text-amber-200/60 font-mono uppercase tracking-wide">
+            {translate(lang, 'risk.nfaLine')}
+          </p>
         </div>
       </div>
     </div>
