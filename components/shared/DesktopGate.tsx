@@ -10,6 +10,7 @@ const PREVIEW_FLAG_KEY = 'adex-desktop-preview';
 
 interface DesktopGateProps {
   lang: Language;
+  isMiniApp?: boolean;
 }
 
 function isTelegramEnvironment(): boolean {
@@ -38,10 +39,11 @@ function logVisit(action: 'landing_shown' | 'opened_in_telegram' | 'continued_as
   }).catch(() => {});
 }
 
-export function DesktopGate({ lang }: DesktopGateProps) {
+export function DesktopGate({ lang, isMiniApp }: DesktopGateProps) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    if (isMiniApp) return;
     if (isTelegramEnvironment()) return;
     try {
       if (window.localStorage.getItem(PREVIEW_FLAG_KEY) === 'yes') return;
